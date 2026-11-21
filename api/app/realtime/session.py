@@ -444,7 +444,7 @@ class RealtimeSession:
             await self._fail(turn, "internal", "Something went wrong.", True)
 
     async def _llm_loop(self, turn: Turn, speaker: _Speaker) -> None:
-        system = {"role": "system", "content": build_system_prompt(self.active_run_id) + REALTIME_ADDENDUM}
+        system = {"role": "system", "content": build_system_prompt(self.active_run_id, turn.user_text, turn.language or self.language) + REALTIME_ADDENDUM}
         msgs: list[dict[str, Any]] = [system, *self.history[-HISTORY_LIMIT:]]
         await self._emit(turn, "llm.started")
         for round_no in range(registry.MAX_TOOL_ROUNDS + 1):

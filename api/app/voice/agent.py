@@ -71,7 +71,7 @@ async def run_turn(session: VoiceSession, turn_id: str, user_text: str) -> None:
     try:
         for round_no in range(MAX_TOOL_ROUNDS + 1):
             schemas = tools.TOOL_SCHEMAS if round_no < MAX_TOOL_ROUNDS else None
-            system = {"role": "system", "content": build_system_prompt(session.active_run_id)}
+            system = {"role": "system", "content": build_system_prompt(session.active_run_id, user_text, getattr(session, "language", "auto"))}
             message = await sarvam_llm.chat([system, *history], schemas, session.api_key)
             calls = message.get("tool_calls")
             if not calls:
