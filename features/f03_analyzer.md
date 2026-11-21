@@ -1,6 +1,6 @@
 # f03 — Analyzer: static APK scan + runtime evidence rules
 
-**Status:** Specced  |  **Depends on:** f01  |  **Owner:** Sonnet agent `analyzer`
+**Status:** Done  |  **Depends on:** f01  |  **Owner:** Sonnet agent `analyzer`
 
 ## Purpose
 
@@ -91,3 +91,4 @@ Each runtime finding: `repro_steps` (human list: apply profile `how`, launch, st
 ## Status Log
 
 - 2026-11-21 — Specced.
+- 2026-11-21 — Implemented: analyzer package, all rules, maestro, tests (48 pass incl. real F-Droid APK smoke via BB_SAMPLE_APK). `runtime_findings` takes optional `package` (3rd arg) for Maestro appId. ApkFacts/Component live in apk.py.
