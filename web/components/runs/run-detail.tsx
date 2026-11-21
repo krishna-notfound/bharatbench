@@ -154,6 +154,7 @@ export function RunDetail({ runId }: { runId: string }) {
           connected={stream.connected}
           finished={stream.finished}
           status={r.status}
+          runtimeSkipped={r.summary?.runtime_executed === false}
         />
         <ScorePanel run={r} />
       </div>

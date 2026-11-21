@@ -31,8 +31,8 @@ export function ScorePanel({ run }: { run: Run }) {
             <span className="font-mono text-sm text-muted-foreground">/ 100</span>
           </div>
           <p className="text-xs text-muted-foreground">
-            100 minus the summed impact of {s.total_findings}{" "}
-            {s.total_findings === 1 ? "finding" : "findings"}.
+            100 × e^(−total impact ÷ 400) across {s.total_findings}{" "}
+            {s.total_findings === 1 ? "finding" : "findings"}. Weights are adjustable assumptions.
           </p>
           <ul className="grid grid-cols-2 gap-2">
             {SEVERITY_ORDER.map((sev) => (

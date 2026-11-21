@@ -33,13 +33,22 @@ const STEPS: RunStatus[] = [
   "done",
 ];
 
-export function StatusStepper({ status }: { status: RunStatus }) {
+const RUNTIME_STEPS: RunStatus[] = ["provisioning", "running"];
+
+export function StatusStepper({
+  status,
+  runtimeSkipped = false,
+}: {
+  status: RunStatus;
+  runtimeSkipped?: boolean;
+}) {
   const idx = STEPS.indexOf(status);
   const stopped = status === "failed" || status === "cancelled";
   return (
     <ol className="flex items-center gap-1 overflow-x-auto pb-1" aria-label="Run progress">
       {STEPS.map((s, i) => {
-        const complete = status === "done" || (idx >= 0 && i < idx);
+        const skipped = runtimeSkipped && RUNTIME_STEPS.includes(s) && (status === "done" || idx > i);
+        const complete = !skipped && (status === "done" || (idx >= 0 && i < idx));
         const current = !stopped && i === idx && status !== "done";
         return (
           <li key={s} className="flex items-center gap-1">
@@ -50,12 +59,14 @@ export function StatusStepper({ status }: { status: RunStatus }) {
                 complete && "bg-success/15 text-success",
                 current && "bg-primary/15 text-primary",
                 !complete && !current && "bg-muted text-muted-foreground",
+                skipped && "line-through",
               )}
             >
               {current && (
                 <span className="mr-1.5 inline-block size-1.5 animate-pulse rounded-full bg-current align-middle" />
               )}
               {STATUS_LABEL[s]}
+              {skipped && <span className="sr-only"> (skipped)</span>}
             </span>
             {i < STEPS.length - 1 && (
               <span className="h-px w-3 bg-border" aria-hidden />
@@ -86,11 +97,13 @@ export function Timeline({
   connected,
   finished,
   status,
+  runtimeSkipped = false,
 }: {
   events: RunEvent[];
   connected: boolean;
   finished: boolean;
   status: RunStatus;
+  runtimeSkipped?: boolean;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -122,7 +135,7 @@ export function Timeline({
         </span>
       </div>
       <div className="border-b border-border px-4 py-3">
-        <StatusStepper status={status} />
+        <StatusStepper status={status} runtimeSkipped={runtimeSkipped} />
       </div>
       <div
         ref={boxRef}
