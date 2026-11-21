@@ -19,7 +19,7 @@ Browser (Next.js web)  ──REST + WS /ws/runs/{id}──►  FastAPI api (lapt
 | API | Python 3.12+, FastAPI, uvicorn, pydantic v2, httpx, uv | REST, WebSockets, pipeline, agent |
 | Static analysis | androguard | Parse manifest, dex, resources of the APK |
 | Storage (now) | SQLite (`data/bharatbench.db`) + files (`data/runs/`) | Runs, findings, events, artifacts |
-| Storage (later) | Supabase Postgres + Storage + Auth | Swap behind `api/app/storage` interface |
+| Storage (Supabase) | Supabase Postgres via PostgREST (`api/app/storage/supabase.py`) | Available now behind `STORAGE_BACKEND=supabase` (needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`); Storage bucket + Auth still later |
 | Voice/AI | Sarvam: streaming STT, chat LLM (tool calling), TTS | Voice agent |
 | Harness | FastAPI on Ubuntu 24.04 EC2 with KVM, Android SDK cmdline-tools, emulator, ADB, Maestro | Executes APK under profiles |
 | Email (later) | Resend | Run-complete emails |
@@ -54,7 +54,7 @@ Artifacts: `data/runs/{run_id}/artifacts/{profile_id}/{file}`. Pydantic models i
 
 - UI reads/writes only through the REST/WS API in `contracts/README.md`, via `web/lib/api.ts`.
 - API code reaches data only via `Storage` (`api/app/storage/base.py`); current impl `storage/sqlite.py`.
-- Planned: `storage/supabase.py` implementing the same interface.
+- `storage/supabase.py` implements the same interface (select with `STORAGE_BACKEND`; default `sqlite`).
 
 ## Auth and Authorization Model
 

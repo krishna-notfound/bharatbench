@@ -14,6 +14,7 @@ Must describe the **actual** state of the repo.
 
 - 2026-11-21 — Context template filled; contracts frozen (`contracts/README.md`, `api/app/models.py`, `api/app/profiles.py`, `web/lib/types.ts`); Next.js + shadcn scaffold in `web/`.
 - 2026-11-21 — Local dev machine: agent-device 0.21.41 + Claude Code MCP configured (no Android SDK locally).
+- 2026-11-21 � f08 Supabase storage backend (`api/app/storage/supabase.py`, PostgREST via httpx, respx tests, live round-trip verified); not yet the default (`STORAGE_BACKEND` stays `sqlite`).
 
 ## In Progress
 
@@ -39,6 +40,7 @@ Must describe the **actual** state of the repo.
 - 2026-11-21 — Custom Python agent orchestrator (no framework) — 7 tools, needs cancellation + barge-in control.
 - 2026-11-21 — Runtime is skipped (not faked) when harness unavailable — honesty invariant.
 - 2026-11-21 — One emulator, one job at a time — hackathon scope.
+- 2026-11-21 � Supabase storage via PostgREST + httpx (no new dependency), models stored as JSON in `data`, selected by `STORAGE_BACKEND` � SQLite stays default; APK files still local.
 
 ## Deferred Work
 

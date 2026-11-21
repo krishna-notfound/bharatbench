@@ -12,7 +12,9 @@ from app.pipeline import HarnessLike
 from app.routes import health, runs, ws_runs
 from app.services import RunServiceImpl, set_run_service
 from app.settings import Settings
+from app.storage.base import Storage
 from app.storage.sqlite import SqliteStorage
+from app.storage.supabase import SupabaseStorage
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -26,7 +28,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.data_dir.mkdir(parents=True, exist_ok=True)
-        storage = SqliteStorage(settings.data_dir / "bharatbench.db")
+        storage: Storage
+        if settings.storage_backend == "supabase":
+            if not settings.supabase_url or not settings.supabase_service_role_key:
+                raise RuntimeError(
+                    "STORAGE_BACKEND=supabase requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY"
+                )
+            storage = SupabaseStorage(settings.supabase_url, settings.supabase_service_role_key)
+        else:
+            storage = SqliteStorage(settings.data_dir / "bharatbench.db")
         await storage.init()
         service = RunServiceImpl(storage, EventBus(storage), settings.data_dir, harness_factory)
         await service.recover_orphans()
