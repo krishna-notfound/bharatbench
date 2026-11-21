@@ -36,14 +36,14 @@ def test_no_profile_means_full_exposure_and_sorted_desc():
 def test_summarize_formula_and_counts():
     scored = score_findings([make_finding("a", severity="critical"), make_finding("b", severity="high")])
     s = summarize(scored, False, "no harness")
-    # (100 + 70) / 3 = 56.67 -> 100 - 56.67 = 43.3
-    assert s.reliability_score == 43.3
+    # 100 * exp(-(100 + 70) / 400) = 65.4
+    assert s.reliability_score == 65.4
     assert s.counts == {"critical": 1, "high": 1, "medium": 0, "low": 0}
     assert s.total_findings == 2
     assert s.runtime_executed is False and s.runtime_skipped_reason == "no harness"
 
 
-def test_summarize_clamps_at_zero_and_empty_is_100():
+def test_summarize_decays_and_empty_is_100():
     many = score_findings([make_finding(str(i), severity="critical") for i in range(10)])
-    assert summarize(many, True, None).reliability_score == 0.0
+    assert summarize(many, True, None).reliability_score == 8.2
     assert summarize([], True, None).reliability_score == 100.0

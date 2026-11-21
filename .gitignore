@@ -14,3 +14,4 @@ context.zip
 .claude/settings.local.json
 harness/jobs/
 .pytest_tmp/
+.claude/worktrees/

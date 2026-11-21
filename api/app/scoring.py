@@ -1,5 +1,7 @@
 """Impact scoring: 100 * users_exposed * severity_weight * flow_usage."""
 
+import math
+
 from app.models import Finding, Impact, RunSummary, Severity
 from app.profiles import PROFILE_BY_ID
 
@@ -36,7 +38,7 @@ def summarize(findings: list[Finding], runtime_executed: bool, skipped_reason: s
     return RunSummary(
         counts=counts,
         total_findings=len(findings),
-        reliability_score=round(max(0.0, 100.0 - min(100.0, total / 3)), 1),
+        reliability_score=round(100.0 * math.exp(-total / 400.0), 1),
         runtime_executed=runtime_executed,
         runtime_skipped_reason=skipped_reason,
     )
