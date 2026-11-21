@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SeverityBadge } from "@/components/findings/severity-badge";
-import { findingSourceLabel } from "@/components/findings/finding-text";
+import { findingSourceLabel, findingTitle } from "@/components/findings/finding-text";
 import { artifactUrl } from "@/lib/api";
 import { titleCase } from "@/lib/format";
 import type { Evidence, Finding } from "@/lib/types";
@@ -187,7 +187,7 @@ export function FindingSheet({
                 <SeverityBadge severity={finding.severity} />
                 <span className="text-xs text-muted-foreground">{findingSourceLabel(finding)}</span>
               </div>
-              <SheetTitle className="text-lg leading-snug">{finding.title}</SheetTitle>
+              <SheetTitle className="text-lg leading-snug">{findingTitle(finding)}</SheetTitle>
               <SheetDescription className="text-xs">
                 {finding.impact && Math.round(finding.impact.users_exposed * 100) > 0
                   ? `Could affect about ${Math.round(finding.impact.users_exposed * 100)}% of users (an assumption based on the device profile).`

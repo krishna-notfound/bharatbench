@@ -25,6 +25,23 @@ import { runTitle } from "@/lib/format";
 import { TERMINAL_STATUSES, type Finding, type Run, type RunEvent, type Severity } from "@/lib/types";
 import { useRunEvents } from "@/lib/ws";
 
+async function saveReport(runId: string) {
+  try {
+    const res = await fetch(reportUrl(runId));
+    if (!res.ok) throw new Error(String(res.status));
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `bharatbench-${runId}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch {
+    toast.error("Could not download the report. Please try again.");
+  }
+}
+
 const CARD =
   "rounded-3xl border border-border bg-card shadow-[0_1px_2px_rgba(30,27,46,0.04),0_8px_24px_rgba(124,92,255,0.06)]";
 
@@ -117,8 +134,12 @@ export function RunDetail({ runId }: { runId: string }) {
       <div className="mx-auto max-w-3xl space-y-4 py-8">
         {back}
         <ErrorState
-          title="I couldn't load this session"
-          message="The service may be offline right now. Please try again in a moment."
+          title={/not found|404/i.test(run.error) ? "I couldn't find that session" : "I couldn't load this session"}
+          message={
+            /not found|404/i.test(run.error)
+              ? "It may have been removed, or the link is wrong. Head back to your sessions."
+              : "The service may be offline right now. Please try again in a moment."
+          }
           onRetry={run.reload}
         />
       </div>
@@ -158,6 +179,11 @@ export function RunDetail({ runId }: { runId: string }) {
               target="_blank"
               rel="noreferrer"
               download={`bharatbench-${runId}.md`}
+              onClick={(e) => {
+                // Cross-origin `download` is ignored by browsers; fetch the file and save it ourselves.
+                e.preventDefault();
+                void saveReport(runId);
+              }}
               className={`${buttonVariants({ variant: "secondary" })} h-9 rounded-full px-4`}
             >
               <Download /> Download report

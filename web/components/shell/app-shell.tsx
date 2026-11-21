@@ -90,7 +90,7 @@ function LogoMark() {
 
 function NavLinks({ pathname }: { pathname: string | null }) {
   return (
-    <nav className="ml-1 flex items-center gap-0.5 sm:ml-3" aria-label="Primary">
+    <nav className="flex items-center gap-0 sm:ml-3 sm:gap-0.5" aria-label="Primary">
       {NAV.map((n) => {
         const active =
           pathname !== null &&
@@ -101,7 +101,7 @@ function NavLinks({ pathname }: { pathname: string | null }) {
             href={n.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "rounded-full px-3.5 py-1.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary",
+              "whitespace-nowrap rounded-full px-2.5 py-1.5 text-sm outline-none sm:px-3.5 transition-colors focus-visible:ring-2 focus-visible:ring-primary",
               active
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:text-foreground",
@@ -123,18 +123,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-30 bg-background/70 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4 md:px-8">
+        <div className="mx-auto flex h-14 max-w-5xl items-center gap-1.5 px-4 sm:gap-3 md:px-8">
           <Link
             href="/"
-            className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="flex shrink-0 items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             <LogoMark />
-            <span className="font-semibold tracking-tight">BharatBench</span>
+            <span className="font-semibold tracking-tight max-[379px]:sr-only">BharatBench</span>
           </Link>
           <Suspense fallback={<NavLinks pathname={null} />}>
             <ActiveNav />
           </Suspense>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
             <HealthDot />
             <AccountButton />
           </div>
