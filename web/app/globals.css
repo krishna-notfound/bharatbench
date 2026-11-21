@@ -33,6 +33,9 @@
   --color-sev-medium: var(--sev-medium);
   --color-sev-low: var(--sev-low);
   --color-success: var(--success);
+  --color-orb-a: var(--orb-a);
+  --color-orb-b: var(--orb-b);
+  --color-orb-c: var(--orb-c);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -54,46 +57,50 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Dark-only theme: tokens live on :root (see context/ui-context.md). */
+/* Light lavender theme, Oryn-inspired (see context/ui-context.md). */
 :root {
-  --background: #0b0d10;
-  --foreground: #e6e8eb;
-  --card: #12161b;
-  --card-foreground: #e6e8eb;
-  --popover: #12161b;
-  --popover-foreground: #e6e8eb;
-  --primary: #ff9933;
-  --primary-foreground: #0b0d10;
-  --secondary: #1a1f26;
-  --secondary-foreground: #e6e8eb;
-  --muted: #1a1f26;
-  --muted-foreground: #8a94a3;
-  --accent: #1a1f26;
-  --accent-foreground: #e6e8eb;
-  --accent-info: #38bdf8;
-  --destructive: #f43f5e;
-  --border: #232a33;
-  --input: #2c3540;
-  --ring: #ff9933;
-  --sev-critical: #f43f5e;
-  --sev-high: #fb923c;
-  --sev-medium: #facc15;
-  --sev-low: #94a3b8;
-  --success: #22c55e;
-  --chart-1: #ff9933;
-  --chart-2: #38bdf8;
-  --chart-3: #22c55e;
-  --chart-4: #facc15;
-  --chart-5: #f43f5e;
-  --radius: 0.625rem;
-  --sidebar: #12161b;
-  --sidebar-foreground: #e6e8eb;
-  --sidebar-primary: #ff9933;
-  --sidebar-primary-foreground: #0b0d10;
-  --sidebar-accent: #1a1f26;
-  --sidebar-accent-foreground: #e6e8eb;
-  --sidebar-border: #232a33;
-  --sidebar-ring: #ff9933;
+  --background: #faf8ff;
+  --foreground: #1e1b2e;
+  --card: #ffffff;
+  --card-foreground: #1e1b2e;
+  --popover: #ffffff;
+  --popover-foreground: #1e1b2e;
+  --primary: #7c5cff;
+  --primary-foreground: #ffffff;
+  --secondary: #f1edfd;
+  --secondary-foreground: #2e2650;
+  --muted: #f3f0fa;
+  --muted-foreground: #6b6880;
+  --accent: #efe9ff;
+  --accent-foreground: #2e2650;
+  --accent-info: #5b8def;
+  --destructive: #e11d48;
+  --border: #e8e4f3;
+  --input: #e3ddf2;
+  --ring: #7c5cff;
+  --sev-critical: #e11d48;
+  --sev-high: #ea580c;
+  --sev-medium: #ca8a04;
+  --sev-low: #64748b;
+  --success: #16a34a;
+  --orb-a: #c4b5fd;
+  --orb-b: #f0abfc;
+  --orb-c: #a5b4fc;
+  --orb-glow: rgba(124, 92, 255, 0.28);
+  --chart-1: #7c5cff;
+  --chart-2: #5b8def;
+  --chart-3: #16a34a;
+  --chart-4: #ca8a04;
+  --chart-5: #e11d48;
+  --radius: 0.875rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1e1b2e;
+  --sidebar-primary: #7c5cff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f3f0fa;
+  --sidebar-accent-foreground: #1e1b2e;
+  --sidebar-border: #e8e4f3;
+  --sidebar-ring: #7c5cff;
 }
 
 @layer base {
@@ -102,9 +109,21 @@
   }
   body {
     @apply bg-background text-foreground;
-    color-scheme: dark;
+    color-scheme: light;
+    background-image: radial-gradient(60rem 30rem at 50% -10%, var(--accent), transparent 70%);
+    background-attachment: fixed;
   }
   html {
     @apply font-sans;
   }
+}
+
+/* Orb animations (components/orb/orb.tsx). Respect reduced motion. */
+@keyframes orb-breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+@keyframes orb-spin { to { transform: rotate(360deg); } }
+@keyframes orb-pulse { 0%,100% { transform: scale(1); } 30% { transform: scale(1.09); } 60% { transform: scale(0.98); } }
+@keyframes orb-listen { 0%,100% { box-shadow: 0 0 0 0 var(--orb-glow); } 50% { box-shadow: 0 0 0 18px transparent; } }
+@keyframes orb-shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+@media (prefers-reduced-motion: reduce) {
+  .orb, .orb * { animation: none !important; }
 }
