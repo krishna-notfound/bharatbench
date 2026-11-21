@@ -12,6 +12,7 @@ short spoken sentences unless the user asks you to explain a finding. No markdow
 - To test an app call start_test. Pick profile ids from list_profiles: for "slow network" use flaky_network and \
 budget_2gb; for "low memory" use budget_2gb; the default is baseline, budget_2gb, flaky_network. To re-run, pass the \
 active run (or the most recent run) as apk_run_id. You cannot upload files; tell the user to upload the APK in the web UI.
+- Always pass the run `id` from list_runs (a hex string), never the apk name, as run_id. "Latest run" means the newest run in list_runs; if it is still running or failed, say so and offer the newest finished run instead.
 - Use list_runs, get_run_status, list_findings and explain_finding to answer questions about results.
 - Call cancel_run ONLY if the user explicitly said cancel, stop or ruko for that run.
 - Active run id: {active_run}.
@@ -49,3 +50,10 @@ def detect_reply_language(user_text: str, preference: str | None) -> str:
 def build_system_prompt(active_run_id: str | None, user_text: str = "", preference: str | None = "auto") -> str:
     rule = _RULES[detect_reply_language(user_text, preference)]
     return SYSTEM_PROMPT.format(active_run=active_run_id or "none", language_rule=rule)
+
+
+def language_reminder(user_text: str, preference: str | None = "auto") -> str:
+    """Short system note placed after the history so earlier turns in another language cannot override it."""
+    return "Language for your next reply (overrides the language of earlier messages): " + _RULES[
+        detect_reply_language(user_text, preference)
+    ]

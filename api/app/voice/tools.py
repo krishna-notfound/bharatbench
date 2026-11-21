@@ -36,7 +36,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         {
             "apk_run_id": {
                 "type": "string",
-                "description": "Run whose APK to re-run; default the active run",
+                "description": "Run id (from list_runs) whose APK to re-run; default the active run",
+            },
+            "apk_name": {
+                "type": "string",
+                "description": "Alternative to apk_run_id: APK file name, e.g. fdroid.apk",
             },
             "profiles": {
                 "type": "array",
@@ -106,6 +110,23 @@ def _sorted_findings(findings: list[Finding]) -> list[Finding]:
     return sorted(findings, key=lambda f: f.impact.score if f.impact else 0.0, reverse=True)
 
 
+async def _resolve_run(service: RunService, ref: str | None, ctx: ToolContext) -> Run | None:
+    """Find a run by id; fall back to apk name (models often pass 'fdroid.apk' or 'fdroid' as a run id)."""
+    if not ref:
+        return None
+    ref = str(ref).strip()
+    run = await service.get_run(ref)
+    if run is not None:
+        return run
+    needle = ref.lower().removesuffix(".apk")
+    runs = await service.list_runs()  # newest first
+    for pool in ([r for r in runs if r.status != "failed"], runs):
+        for r in pool:
+            if needle and needle in r.apk_name.lower():
+                return r
+    return None
+
+
 async def _find_finding(service: RunService, finding_id: str, ctx: ToolContext) -> Finding | None:
     run_ids: list[str] = [ctx.active_run_id] if ctx.active_run_id else []
     run_ids += [r.id for r in await service.list_runs() if r.id != ctx.active_run_id]
@@ -133,9 +154,9 @@ async def _dispatch(service: RunService, name: str, args: dict[str, Any], ctx: T
     if name == "start_test":
         return await _start_test(service, args, ctx)
     if name == "get_run_status":
-        run = await service.get_run(str(args["run_id"]))
+        run = await _resolve_run(service, args["run_id"], ctx)
         if run is None:
-            return {"error": f"run {args['run_id']} not found"}
+            return {"error": f"run {args['run_id']} not found; use an id from list_runs"}
         events = await service.list_events(run.id)
         return {
             **_run_brief(run),
@@ -144,7 +165,10 @@ async def _dispatch(service: RunService, name: str, args: dict[str, Any], ctx: T
             "recent_events": [e.message for e in events[-5:]],
         }
     if name == "list_findings":
-        findings = _sorted_findings(await service.list_findings(str(args["run_id"])))
+        run = await _resolve_run(service, args["run_id"], ctx)
+        if run is None:
+            return {"error": f"run {args['run_id']} not found; use an id from list_runs"}
+        findings = _sorted_findings(await service.list_findings(run.id))
         severity = args.get("severity")
         if severity:
             findings = [f for f in findings if f.severity == severity]
@@ -159,7 +183,12 @@ async def _dispatch(service: RunService, name: str, args: dict[str, Any], ctx: T
         ]
         return data
     if name == "cancel_run":
-        run = await service.cancel_run(str(args["run_id"]))
+        target = await _resolve_run(service, args["run_id"], ctx)
+        if target is None:
+            return {"error": f"run {args['run_id']} not found; use an id from list_runs"}
+        if target.status in ("done", "failed", "cancelled"):
+            return {"run_id": target.id, "status": target.status, "note": "run already finished; nothing to cancel"}
+        run = await service.cancel_run(target.id)
         if run is None:
             return {"error": f"run {args['run_id']} not found"}
         return {"run_id": run.id, "status": run.status}
@@ -171,11 +200,16 @@ async def _start_test(service: RunService, args: dict[str, Any], ctx: ToolContex
     profiles = [p for p in requested if p in _PROFILE_IDS]
     if not profiles:
         return {"error": f"no valid profile ids; valid: {_PROFILE_IDS}"}
-    source = args.get("apk_run_id") or ctx.active_run_id
-    if not source:
+    ref = args.get("apk_run_id") or args.get("apk_name")
+    source_run = await _resolve_run(service, ref, ctx) if ref else None
+    if ref and source_run is None:
+        return {"error": f"no uploaded APK matching {ref}; use list_runs to see available APKs"}
+    if source_run is None and ctx.active_run_id:
+        source_run = await service.get_run(ctx.active_run_id)
+    if source_run is None:
         runs = await service.list_runs()
         if not runs:
             return {"error": "no uploaded APK yet; ask the user to upload an APK in the web UI"}
-        source = runs[0].id
-    run = await service.rerun(str(source), profiles)
+        source_run = next((r for r in runs if r.status != "failed"), runs[0])
+    run = await service.rerun(source_run.id, profiles)
     return {"run_id": run.id, "status": run.status, "profiles": profiles}

@@ -26,3 +26,10 @@ def test_explicit_preference_wins():
 def test_prompt_carries_language_instruction():
     assert "Reply in English" in build_system_prompt(None, "Show my recent sessions", "auto")
     assert "Hinglish" in build_system_prompt(None, "kya haal hai, mera app test karo", "auto")
+
+
+def test_language_reminder_follows_latest_message() -> None:
+    from app.voice.prompts import language_reminder
+
+    assert 'English' in language_reminder('show my recent sessions', 'auto')
+    assert 'Devanagari' in language_reminder('मेरे टेस्ट दिखाओ', 'auto')

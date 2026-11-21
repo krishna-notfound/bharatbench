@@ -36,7 +36,7 @@ from app.realtime.segmenter import SentenceSegmenter
 from app.realtime.turns import Turn, TurnManager
 from app.settings import Settings
 from app.voice.config import TTS_SAMPLE_RATE
-from app.voice.prompts import build_system_prompt
+from app.voice.prompts import build_system_prompt, language_reminder
 
 log = logging.getLogger(__name__)
 
@@ -429,6 +429,7 @@ class RealtimeSession:
                 await self._llm_loop(turn, speaker)
             await speaker.finish()
             await self._complete(turn)
+            self._schedule_note_drain()
         except asyncio.CancelledError:
             if speaker is not None:
                 await asyncio.shield(speaker.abort())
@@ -445,10 +446,13 @@ class RealtimeSession:
 
     async def _llm_loop(self, turn: Turn, speaker: _Speaker) -> None:
         system = {"role": "system", "content": build_system_prompt(self.active_run_id, turn.user_text, turn.language or self.language) + REALTIME_ADDENDUM}
-        msgs: list[dict[str, Any]] = [system, *self.history[-HISTORY_LIMIT:]]
+        reminder = {"role": "system", "content": language_reminder(turn.user_text, turn.language or self.language)}
+        msgs: list[dict[str, Any]] = [system, *self.history[-HISTORY_LIMIT:], reminder]
         await self._emit(turn, "llm.started")
         for round_no in range(registry.MAX_TOOL_ROUNDS + 1):
             await self._state(turn, GENERATING)
+            if self._notes:  # job updates that arrived mid-turn: the model must not contradict them
+                msgs.append({"role": "system", "content": "Live job updates: " + " ".join(self._notes)})
             tools = registry.TOOL_SCHEMAS if round_no < registry.MAX_TOOL_ROUNDS else None
             round_text: list[str] = []
             calls: list[providers.ToolCall] = []
@@ -566,6 +570,21 @@ class RealtimeSession:
                         return
         except (LookupError, RuntimeError, OSError) as exc:
             log.warning("job watch for %s ended: %s", run_id, type(exc).__name__)
+
+    def _schedule_note_drain(self) -> None:
+        """A job update that landed mid-turn is spoken once the turn ends, so the user never misses it."""
+        if not self._notes or self._closed:
+            return
+        task = asyncio.create_task(self._drain_notes())
+        self._watchers.add(task)
+        task.add_done_callback(self._watchers.discard)
+
+    async def _drain_notes(self) -> None:
+        if not self._notes or self.tm.current is not None:
+            return
+        message = self._notes[-1]
+        self._notes.clear()
+        await self._narrate(message)
 
     async def _narrate(self, message: str) -> None:
         """Speak a job update only when idle; otherwise remember it for the model's next turn."""
