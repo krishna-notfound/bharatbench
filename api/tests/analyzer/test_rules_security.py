@@ -85,6 +85,20 @@ def test_exported_component_positive_severities(make_facts, run_id):
     assert sev["com.example.app.Prov"] == "high" and sev["com.example.app.Svc"] == "medium"
 
 
+def test_exported_launcher_and_deep_link_activities_not_flagged(make_facts, run_id):
+    comps = [
+        Component("activity", "com.example.app.Alias", exported=True, has_intent_filter=True, launcher=True),
+        Component("activity", "com.example.app.Link", exported=True, has_intent_filter=True, deep_link=True),
+    ]
+    assert check_exported_components(make_facts(components=comps), run_id) == []
+
+
+def test_exported_filtered_activity_is_low(make_facts, run_id):
+    comps = [Component("activity", "com.example.app.Share", exported=True, has_intent_filter=True)]
+    (f,) = check_exported_components(make_facts(components=comps), run_id)
+    assert f.severity == "low"
+
+
 def test_exported_component_negative(make_facts, run_id):
     comps = [
         Component("activity", "com.example.app.Main", exported=True, has_intent_filter=True),

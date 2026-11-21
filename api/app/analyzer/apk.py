@@ -14,7 +14,7 @@ ANDROID_NS = "http://schemas.android.com/apk/res/android"
 MAX_STRINGS = 200_000
 MAX_STRING_LEN = 2048
 CLASS_SAMPLE = 2000
-_COMPONENT_TAGS = ("activity", "service", "receiver", "provider")
+_COMPONENT_TAGS = ("activity", "activity-alias", "service", "receiver", "provider")
 
 
 @dataclass
@@ -24,6 +24,8 @@ class Component:
     exported: bool | None = None
     permission: str | None = None
     has_intent_filter: bool = False
+    launcher: bool = False  # MAIN/LAUNCHER entry point (must be exported)
+    deep_link: bool = False  # VIEW + BROWSABLE (must be exported to receive links)
 
 
 @dataclass
@@ -86,17 +88,26 @@ def _components(manifest: etree._Element, package: str) -> list[Component]:
             name = _attr(el, "name")
             if not name:
                 continue
-            has_filter = el.find("intent-filter") is not None
+            filters = el.findall("intent-filter")
+            has_filter = bool(filters)
+            actions = {_attr(a, "name") for f in filters for a in f.findall("action")}
+            cats = {_attr(c, "name") for f in filters for c in f.findall("category")}
+            launcher = "android.intent.category.LAUNCHER" in cats or (
+                "android.intent.action.MAIN" in actions and "android.intent.category.INFO" in cats
+            )
+            deep_link = "android.intent.action.VIEW" in actions and "android.intent.category.BROWSABLE" in cats
             exported = _bool(_attr(el, "exported"))
             if exported is None and (has_filter and kind != "provider"):
                 exported = True  # implicit export for filtered components (pre-Android 12 default)
             out.append(
                 Component(
-                    kind=kind,
+                    kind="activity" if kind == "activity-alias" else kind,
                     name=_qualify(package, name),
                     exported=exported,
                     permission=_attr(el, "permission"),
                     has_intent_filter=has_filter,
+                    launcher=launcher,
+                    deep_link=deep_link,
                 )
             )
     return out

@@ -31,7 +31,23 @@ DANGEROUS_PERMISSIONS = [
 
 _HTTP_URL = re.compile(r"http://[^\s\"'<>]+")
 _LOCAL_HOSTS = ("localhost", "127.0.0.1", "10.0.2.2", "0.0.0.0", "[::1]")
-_SCHEMA_HOSTS = ("schemas.android.com", "www.w3.org", "xmlpull.org", "schemas.microsoft.com")
+_SCHEMA_HOSTS = (
+    "schemas.android.com",
+    "w3.org",
+    "xmlpull.org",
+    "schemas.microsoft.com",
+    "ns.adobe.com",
+    "xml.org",
+    "java.sun.com",
+    "apache.org",
+    "purl.org",
+    "logback.qos.ch",
+    "slf4j.org",
+    "iana.org",
+    "ietf.org",
+    "opengis.net",
+    "xmlns.com",
+)
 
 
 def _truthy(value: str | None) -> bool:
@@ -149,9 +165,11 @@ def check_exported_components(facts: ApkFacts, run_id: str) -> list[Finding]:
     for c in facts.components:
         if c.exported is not True or c.permission:
             continue
-        if c.kind == "activity" and c.name == facts.main_activity:
-            continue
+        if c.kind == "activity" and (c.name == facts.main_activity or c.launcher or c.deep_link):
+            continue  # launcher and deep-link activities must be exported
         severity: Severity = "high" if c.kind == "provider" else "medium"
+        if c.kind == "activity" and c.has_intent_filter:
+            severity = "low"  # activities with intent filters are routinely exported by design
         findings.append(
             _finding(
                 run_id,
@@ -223,7 +241,7 @@ def check_http_urls(facts: ApkFacts, run_id: str) -> list[Finding]:
         for m in _HTTP_URL.finditer(s):
             url = m.group(0)
             host = url[len("http://") :].split("/")[0].split(":")[0].lower()
-            if not host or host in _LOCAL_HOSTS or any(host.endswith(h) for h in _SCHEMA_HOSTS):
+            if not host or "." not in host or host in _LOCAL_HOSTS or any(host == h or host.endswith("." + h) for h in _SCHEMA_HOSTS):
                 continue
             if url not in urls:
                 urls.append(url)

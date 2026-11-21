@@ -57,8 +57,13 @@ def test_upload_too_large_413(client, monkeypatch):
     from app.routes import runs
 
     monkeypatch.setattr(runs, "MAX_APK_BYTES", 10)
-    r = upload(client, data=b"x" * 100)
+    r = upload(client, data=b"PK" + b"x" * 100)
     assert r.status_code == 413
+
+
+def test_upload_non_zip_400(client):
+    r = upload(client, data=b"hello world, definitely not an apk")
+    assert r.status_code == 400
 
 
 def test_upload_creates_run_and_finishes(client):
@@ -106,7 +111,7 @@ def test_artifact_serving_and_traversal(client, settings):
 
 
 def test_corrupt_apk_run_failed(client):
-    run = upload(client, data=b"garbage").json()
+    run = upload(client, data=b"PK\x03\x04garbage").json()
     done = wait_done(client, run["id"])
     assert done["status"] == "failed" and done["error"]
 
