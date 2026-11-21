@@ -13,6 +13,7 @@ FILLER = "/data/local/tmp/bb_filler"
 TARGET_FREE_KB = 400 * 1024
 FLAKY_OFF_S = 6
 FLAKY_ON_S = 4
+ADB_PORT = "5555"
 
 Sleep = Callable[[float], Awaitable[None]]
 
@@ -69,19 +70,28 @@ class HostNet:
         self.dev = name
         return name
 
+    async def _install(self, dev: str, child: list[str]) -> None:
+        """prio root: band 1:3 (all app traffic) -> netem child; adb control traffic (port ADB_PORT) -> band 1:1 unshaped."""
+        await self._tc("qdisc", "replace", "dev", dev, "root", "handle", "1:", "prio", "bands", "3",
+                       "priomap", *(["2"] * 16))  # fmt: skip
+        await self._tc("qdisc", "replace", "dev", dev, "parent", "1:3", "handle", "30:", "netem", *child)
+        await self._tc("filter", "replace", "dev", dev, "parent", "1:", "protocol", "ip", "prio", "1",
+                       "u32", "match", "ip", "dport", ADB_PORT, "0xffff", "flowid", "1:1")  # fmt: skip
+
     async def shape(self, rate: str, delay_ms: int, jitter_ms: int) -> None:
         dev = await self.device()
-        await self._tc("qdisc", "replace", "dev", dev, "root", "netem", "rate", rate, "delay", f"{delay_ms}ms", f"{jitter_ms}ms")
+        await self._install(dev, ["rate", rate, "delay", f"{delay_ms}ms", f"{jitter_ms}ms"])
         await self._tc("qdisc", "replace", "dev", dev, "handle", "ffff:", "ingress")
-        await self._tc(
-            "filter", "replace", "dev", dev, "parent", "ffff:", "protocol", "all", "prio", "1",
-            "u32", "match", "u32", "0", "0", "police", "rate", rate, "burst", "32k", "drop", "flowid", ":1",
-        )  # fmt: skip
+        # adb replies (sport ADB_PORT) pass; everything else from the app is policed
+        await self._tc("filter", "replace", "dev", dev, "parent", "ffff:", "protocol", "ip", "prio", "1",
+                       "u32", "match", "ip", "sport", ADB_PORT, "0xffff", "action", "ok")  # fmt: skip
+        await self._tc("filter", "replace", "dev", dev, "parent", "ffff:", "protocol", "all", "prio", "2",
+                       "u32", "match", "u32", "0", "0", "police", "rate", rate, "burst", "32k", "drop", "flowid", ":1")  # fmt: skip
 
     async def blackout(self, on: bool) -> None:
         dev = await self.device()
         if on:
-            await self._tc("qdisc", "replace", "dev", dev, "root", "netem", "loss", "100%")
+            await self._install(dev, ["loss", "100%"])
         else:
             await self._del(dev, "root")
 

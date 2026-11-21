@@ -141,9 +141,12 @@ async def test_redroid_budget_netem_and_revert():
     note = await pm.apply("budget_2gb")
     await pm.revert("budget_2gb")
     calls = tc_calls(host_r)
-    assert calls[0] == ["qdisc", "replace", "dev", "veth5ae5bd0", "root", "netem", "rate", "2mbit", "delay", "200ms", "100ms"]
-    assert calls[1][:5] == ["qdisc", "replace", "dev", "veth5ae5bd0", "handle"]
-    assert "police" in calls[2]
+    flat = [" ".join(c) for c in calls]
+    assert "qdisc replace dev veth5ae5bd0 parent 1:3 handle 30: netem rate 2mbit delay 200ms 100ms" in flat
+    # adb control traffic (port 5555) is exempt from shaping in both directions
+    assert any("match ip dport 5555" in c and "flowid 1:1" in c for c in flat)
+    assert any("match ip sport 5555" in c and "action ok" in c for c in flat)
+    assert any("police rate 2mbit" in c for c in flat)
     assert calls[-2:] == [
         ["qdisc", "del", "dev", "veth5ae5bd0", "root"],
         ["qdisc", "del", "dev", "veth5ae5bd0", "ingress"],
@@ -158,7 +161,7 @@ async def test_redroid_flaky_blackout_cycles():
         await asyncio.sleep(0)
     await pm.revert("flaky_network")
     calls = tc_calls(host_r)
-    assert ["qdisc", "replace", "dev", "veth5ae5bd0", "root", "netem", "loss", "100%"] in calls
+    assert ["qdisc", "replace", "dev", "veth5ae5bd0", "parent", "1:3", "handle", "30:", "netem", "loss", "100%"] in calls
     assert ["qdisc", "del", "dev", "veth5ae5bd0", "root"] in calls
     assert pm.toggles >= 1
 
