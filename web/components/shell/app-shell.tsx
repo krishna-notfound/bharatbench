@@ -1,5 +1,7 @@
 "use client";
 
+import { AccountButton } from "@/components/auth";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
@@ -132,8 +134,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Suspense fallback={<NavLinks pathname={null} />}>
             <ActiveNav />
           </Suspense>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
             <HealthDot />
+            <AccountButton />
           </div>
         </div>
       </header>

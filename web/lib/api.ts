@@ -1,3 +1,4 @@
+import { getAccessToken } from "@/lib/supabase/client";
 import type {
   Finding,
   Health,
@@ -20,10 +21,16 @@ export class ApiError extends Error {
   }
 }
 
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
+  const headers = { ...(await authHeaders()), ...(init?.headers as Record<string, string> | undefined) };
   try {
-    res = await fetch(`${API_URL}${path}`, { cache: "no-store", ...init });
+    res = await fetch(`${API_URL}${path}`, { cache: "no-store", ...init, headers });
   } catch {
     throw new ApiError(`Cannot reach the API at ${API_URL}`, 0);
   }
@@ -78,9 +85,10 @@ export function createRun(
   profiles: ProfileId[],
   onProgress?: (pct: number) => void,
 ): Promise<Run> {
-  return new Promise((resolve, reject) => {
+  return authHeaders().then((headers) => new Promise<Run>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${API_URL}/api/runs`);
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
     xhr.responseType = "json";
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {
@@ -105,5 +113,5 @@ export function createRun(
     form.append("apk", file);
     form.append("profiles", profiles.join(","));
     xhr.send(form);
-  });
+  }));
 }

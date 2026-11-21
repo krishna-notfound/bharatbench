@@ -1,9 +1,6 @@
-/**
- * Access token for `session.start`. Returns null until the auth module (f10, `@/lib/supabase`)
- * is merged; the server accepts a null token only when `AUTH_REQUIRED=false`.
- *
- * ORCHESTRATOR: on merge, replace the body with `return getAccessToken();` from `@/lib/supabase`.
- */
+import { getAccessToken } from "@/lib/supabase/client";
+
+/** Supabase access token for `session.start` (guest or Google); null when signed out or Supabase is unset. */
 export async function getTokenSafe(): Promise<string | null> {
-  return null;
+  return getAccessToken();
 }

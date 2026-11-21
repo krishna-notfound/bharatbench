@@ -21,7 +21,6 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
     supabase_jwt_secret: str | None = None
-    auth_required: bool = False
     storage_backend: Literal["sqlite", "supabase"] = "sqlite"
     cors_origins: str = "http://localhost:3000"
 

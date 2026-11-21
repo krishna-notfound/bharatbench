@@ -152,7 +152,7 @@ export function VoicePanel() {
           }}
           className="fixed right-4 bottom-4 z-40 flex size-14 items-center justify-center rounded-full border border-border bg-card shadow-[0_8px_24px_rgba(124,92,255,0.22)] transition-transform hover:scale-105 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none md:right-8 md:bottom-8"
         >
-          <Orb state={rt.orbState} size="sm" />
+          <Orb state={rt.orbState} size="sm" getLevel={rt.getLevel} />
         </button>
       )}
 
@@ -171,7 +171,7 @@ export function VoicePanel() {
               aria-label={speaking ? "Interrupt the agent" : "BharatBench agent"}
               className={cn("rounded-full outline-none", speaking ? "cursor-pointer" : "cursor-default")}
             >
-              <Orb state={rt.orbState} size="md" />
+              <Orb state={rt.orbState} size="md" getLevel={rt.getLevel} />
             </button>
             <SheetTitle className="mt-2 text-base">BharatBench</SheetTitle>
             <SheetDescription role="status" aria-live="polite" className="text-xs">

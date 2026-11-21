@@ -59,3 +59,6 @@ create policy messages_select_own on public.messages
   for select to authenticated using (
     exists (select 1 from public.conversations c where c.id = conversation_id and c.user_id = (select auth.uid()))
   );
+
+-- Trigger-only function: not callable through the API.
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
