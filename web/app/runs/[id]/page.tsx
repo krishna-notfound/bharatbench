@@ -11,9 +11,10 @@ export default function RunPage({ params }: PageProps<"/runs/[id]">) {
   return (
     <Suspense
       fallback={
-        <div className="space-y-6">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-80 rounded-xl" />
+        <div className="mx-auto max-w-5xl space-y-6 py-8">
+          <Skeleton className="mx-auto size-24 rounded-full" />
+          <Skeleton className="mx-auto h-6 w-64" />
+          <Skeleton className="h-40 rounded-3xl" />
         </div>
       }
     >

@@ -1,80 +1,63 @@
-import { AlertTriangle, Info } from "lucide-react";
-import { SEVERITY_BAR } from "@/components/findings/severity-badge";
-import { SEVERITY_LABEL, SEVERITY_ORDER } from "@/lib/format";
+import { AlertTriangle } from "lucide-react";
 import type { Run } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-function scoreTone(score: number): string {
-  if (score >= 80) return "text-success";
-  if (score >= 50) return "text-sev-medium";
-  return "text-sev-critical";
+function scoreTone(score: number): { text: string; stroke: string } {
+  if (score >= 80) return { text: "text-success", stroke: "stroke-success" };
+  if (score >= 50) return { text: "text-sev-medium", stroke: "stroke-sev-medium" };
+  return { text: "text-sev-critical", stroke: "stroke-sev-critical" };
 }
 
+const R = 44;
+const C = 2 * Math.PI * R;
+
+/** Reliability score ring. Renders only when the API has produced a summary. */
 export function ScorePanel({ run }: { run: Run }) {
   const s = run.summary;
+  if (!s) return null;
+  const score = Math.max(0, Math.min(100, Math.round(s.reliability_score)));
+  const tone = scoreTone(score);
   return (
-    <div className="flex h-full flex-col gap-4 rounded-xl border border-border bg-card p-4">
-      <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-        Reliability score
-      </h2>
-      {s ? (
-        <>
-          <div className="flex items-baseline gap-2">
-            <span
-              className={cn(
-                "font-mono text-5xl font-semibold tabular-nums",
-                scoreTone(s.reliability_score),
-              )}
-            >
-              {Math.round(s.reliability_score)}
-            </span>
-            <span className="font-mono text-sm text-muted-foreground">/ 100</span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            100 × e^(−total impact ÷ 400) across {s.total_findings}{" "}
-            {s.total_findings === 1 ? "finding" : "findings"}. Weights are adjustable assumptions.
-          </p>
-          <ul className="grid grid-cols-2 gap-2">
-            {SEVERITY_ORDER.map((sev) => (
-              <li
-                key={sev}
-                className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2"
-              >
-                <span className={cn("size-2 rounded-full", SEVERITY_BAR[sev])} />
-                <span className="flex-1 text-xs text-muted-foreground">
-                  {SEVERITY_LABEL[sev]}
-                </span>
-                <span className="font-mono text-sm font-medium tabular-nums">
-                  {s.counts[sev]}
-                </span>
-              </li>
-            ))}
-          </ul>
-          {!s.runtime_executed && (
-            <div
-              role="note"
-              className="flex gap-2 rounded-lg border border-sev-medium/40 bg-sev-medium/10 p-3 text-xs"
-            >
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-sev-medium" />
-              <div>
-                <p className="font-medium text-sev-medium">
-                  Runtime testing was skipped. Static scan only.
-                </p>
-                <p className="mt-0.5 text-muted-foreground">
-                  {s.runtime_skipped_reason ?? "No reason was reported."}
-                </p>
-              </div>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="flex flex-1 flex-col items-start justify-center gap-2 text-sm text-muted-foreground">
-          <Info className="size-5" />
-          {run.status === "failed" || run.status === "cancelled"
-            ? "No score: this run did not finish."
-            : "Score appears when scoring completes."}
+    <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
+      <div className="relative size-28 shrink-0" role="img" aria-label={`Reliability score ${score} out of 100`}>
+        <svg viewBox="0 0 100 100" className="size-full -rotate-90">
+          <circle cx="50" cy="50" r={R} fill="none" strokeWidth="8" className="stroke-muted" />
+          <circle
+            cx="50"
+            cy="50"
+            r={R}
+            fill="none"
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={C}
+            strokeDashoffset={C * (1 - score / 100)}
+            className={cn("transition-all duration-700", tone.stroke)}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className={cn("font-mono text-3xl font-semibold tabular-nums", tone.text)}>{score}</span>
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">of 100</span>
         </div>
-      )}
+      </div>
+      <div className="min-w-0 space-y-1 text-center sm:text-left">
+        <p className="text-sm font-medium">Reliability score</p>
+        <p className="text-xs text-muted-foreground">
+          Based on {s.total_findings} {s.total_findings === 1 ? "issue" : "issues"} and how many users each could
+          affect. Weights are adjustable assumptions, not measured telemetry.
+        </p>
+        {!s.runtime_executed && (
+          <p
+            role="note"
+            className="mt-2 flex items-start gap-1.5 rounded-2xl bg-sev-medium/10 px-3 py-2 text-left text-xs text-foreground"
+          >
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-sev-medium" />
+            <span>
+              I skipped the emulator test, so this is an APK scan only.
+              {s.runtime_skipped_reason ? ` ${s.runtime_skipped_reason}` : ""}
+            </span>
+          </p>
+        )}
+      </div>
     </div>
   );
 }

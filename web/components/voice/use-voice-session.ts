@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { VoiceClientMessage, VoiceServerMessage } from "@/lib/types";
+import type { OrbState } from "@/components/orb/orb";
 import { MicCapture, PlaybackQueue, Vad } from "./audio";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -15,10 +16,36 @@ export interface TranscriptItem {
   role: "user" | "assistant" | "tool" | "system";
   text: string;
   turnId?: string;
+  /** For role "tool": the tool name and, once known, whether it succeeded. */
+  toolName?: string;
+  ok?: boolean;
+}
+
+const STORAGE_KEY = "bb.agent.thread.v1";
+const MAX_STORED = 100;
+
+function loadThread(): TranscriptItem[] {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (i): i is TranscriptItem =>
+        !!i &&
+        typeof i === "object" &&
+        typeof (i as TranscriptItem).id === "number" &&
+        typeof (i as TranscriptItem).text === "string",
+    );
+  } catch {
+    return [];
+  }
 }
 
 export interface VoiceSession {
   state: VoiceState;
+  /** Orb state derived from real voice events; "error" when the service failed. */
+  orbState: OrbState;
   connected: boolean;
   micOn: boolean;
   transcript: TranscriptItem[];
@@ -29,6 +56,10 @@ export interface VoiceSession {
   disconnect: () => void;
   toggleMic: () => Promise<void>;
   sendText: (text: string) => void;
+  /** Stop assistant playback and cancel the in-flight turn. */
+  interrupt: () => void;
+  /** Clear the thread and its persisted copy. */
+  clearTranscript: () => void;
 }
 
 export function useVoiceSession(): VoiceSession {
@@ -101,10 +132,20 @@ export function useVoiceSession(): VoiceSession {
           break;
         case "tool_call":
           setTurn(true);
-          addItem({ role: "tool", text: `Calling ${msg.name}` });
+          addItem({ role: "tool", text: `Calling ${msg.name}`, toolName: msg.name });
           break;
         case "tool_result":
-          addItem({ role: "tool", text: `${msg.name}: ${msg.ok ? "ok" : "failed"} - ${msg.summary}` });
+          setTranscript((prev) => {
+            for (let i = prev.length - 1; i >= 0; i--) {
+              const it = prev[i];
+              if (it.role === "tool" && it.toolName === msg.name && it.ok === undefined) {
+                const next = [...prev];
+                next[i] = { ...it, ok: msg.ok, text: `${msg.name}: ${msg.ok ? "ok" : "failed"} - ${msg.summary}` };
+                return next;
+              }
+            }
+            return prev;
+          });
           break;
         case "audio":
           getPlayback().enqueue(msg.data);
@@ -212,6 +253,37 @@ export function useVoiceSession(): VoiceSession {
     [send],
   );
 
+  // Restore the persisted thread after mount (avoids a hydration mismatch).
+  useEffect(() => {
+    const saved = loadThread();
+    if (saved.length === 0) return;
+    idRef.current = Math.max(idRef.current, ...saved.map((i) => i.id));
+    queueMicrotask(() => setTranscript((prev) => [...saved, ...prev]));
+  }, []);
+
+  // Persist the thread. localStorage is a convenience, so every access is guarded.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (!restoredRef.current) {
+      restoredRef.current = true;
+      return; // skip the initial empty state so it cannot clobber the saved thread
+    }
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(transcript.slice(-MAX_STORED)));
+    } catch {
+      /* storage unavailable: ignore */
+    }
+  }, [transcript]);
+
+  const clearTranscript = useCallback(() => {
+    setTranscript([]);
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(
     () => () => {
       micRef.current?.stop();
@@ -228,8 +300,11 @@ export function useVoiceSession(): VoiceSession {
     else if (micOn) state = "listening";
   }
 
+  const orbState: OrbState = error && !connected ? "error" : state;
+
   return {
-    state, connected, micOn, transcript, error, language,
+    state, orbState, connected, micOn, transcript, error, language,
     setLanguage, connect, disconnect, toggleMic, sendText,
+    interrupt: bargeIn, clearTranscript,
   };
 }
