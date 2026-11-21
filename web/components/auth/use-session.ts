@@ -12,7 +12,8 @@ export type SessionState = {
   /** False when NEXT_PUBLIC_SUPABASE_* env vars are unset. */
   available: boolean;
   signInGuest: () => Promise<string | null>;
-  signInGoogle: () => Promise<string | null>;
+  /** `next` is where to land after the OAuth round-trip. */
+  signInGoogle: (next?: string) => Promise<string | null>;
   signOut: () => Promise<void>;
 };
 
@@ -56,14 +57,41 @@ export function useSession(): SessionState {
       : "Couldn't start a guest session. Please try again.";
   }, []);
 
-  const signInGoogle = useCallback(async () => {
+  const signInGoogle = useCallback(async (next?: string) => {
     const supabase = getSupabase();
     if (!supabase) return "Sign-in unavailable";
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: window.location.origin },
-    });
-    return error ? "Couldn't start Google sign-in. Please try again." : null;
+    const NOT_SET_UP = "Google sign-in isn't set up yet. Continue as guest for now.";
+    // signInWithOAuth only builds a URL, so a disabled provider would dump the user on a raw
+    // JSON error page. Ask the auth server first (public settings endpoint).
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`,
+        { headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string } },
+      );
+      if (res.ok) {
+        const cfg = (await res.json()) as { external?: { google?: boolean } };
+        if (cfg.external && !cfg.external.google) return NOT_SET_UP;
+      }
+    } catch {
+      /* offline or blocked: fall through and let the redirect try */
+    }
+    const redirectTo = `${window.location.origin}/auth/callback${
+      next ? `?next=${encodeURIComponent(next)}` : ""
+    }`;
+    const options = { redirectTo };
+    const { data } = await supabase.auth.getSession();
+    const isGuest = Boolean(data.session?.user.is_anonymous);
+    // Guests upgrade in place (keeps their runs and chats); needs manual linking enabled.
+    let { error } = isGuest
+      ? await supabase.auth.linkIdentity({ provider: "google", options })
+      : await supabase.auth.signInWithOAuth({ provider: "google", options });
+    if (error && isGuest) {
+      ({ error } = await supabase.auth.signInWithOAuth({ provider: "google", options }));
+    }
+    if (!error) return null;
+    return /provider|enabled|unsupported/i.test(error.message)
+      ? NOT_SET_UP
+      : "Couldn't start Google sign-in. Please try again.";
   }, []);
 
   const signOut = useCallback(async () => {
