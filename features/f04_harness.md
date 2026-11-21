@@ -1,6 +1,6 @@
 # f04 — Harness service (EC2): emulator, profiles, crawler, evidence
 
-**Status:** Specced  |  **Depends on:** f01  |  **Owner:** Sonnet agent `harness`
+**Status:** Implemented (emulator-dependent parts unverified)  |  **Depends on:** f01  |  **Owner:** Sonnet agent `harness`
 
 ## Purpose
 
@@ -75,3 +75,4 @@ appliers (apply + guaranteed revert), crawler, evidence collection, parsers, tes
 ## Status Log
 
 - 2026-11-21 — Specced.
+- 2026-11-21 — Implemented on branch feat/f04-harness: harness service, parsers, profiles, crawler, evidence, job runner, scripts, systemd unit, README. 38 tests (mocked adb) + ruff pass; local uvicorn /health observed 401 without token / 200 with. Not verified: anything needing a real emulator/EC2 (see harness/README.md "Verified vs assumed").

@@ -1,0 +1,8 @@
+Applications Memory Usage (in Kilobytes):
+** MEMINFO in pid 4242 [com.example.shop] **
+                   Pss  Private  Private  SwapPss      Rss
+                 Total    Dirty    Clean    Dirty    Total
+  Native Heap    20000    19900        0        0    21000
+        TOTAL    98765    80000     5000        0   120000
+
+ TOTAL PSS:    98765            TOTAL RSS:   120000      TOTAL SWAP PSS:        0
