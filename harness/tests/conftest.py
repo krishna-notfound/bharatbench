@@ -1,6 +1,7 @@
 import os
 
 os.environ.setdefault("HARNESS_TOKEN", "test-token")
+os.environ.setdefault("SECURITY_ENABLED", "false")  # real tcpdump/adb root are exercised in test_security with fakes
 
 from pathlib import Path
 

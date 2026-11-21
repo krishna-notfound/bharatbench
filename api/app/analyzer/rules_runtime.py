@@ -1,5 +1,9 @@
 """Runtime rules: HarnessResult -> Findings. Every finding carries at least one Evidence."""
 
+import re
+from collections import Counter
+
+from app.analyzer.dedupe import crash_signature
 from app.analyzer.ids import finding_id
 from app.analyzer.maestro import steps_to_maestro
 from app.models import (
@@ -9,11 +13,15 @@ from app.models import (
     HarnessCrash,
     HarnessProfileResult,
     HarnessResult,
+    HarnessSecurityCheck,
     Severity,
 )
 from app.profiles import PROFILE_BY_ID
 
 JOURNEY = "Auto crawl"
+_LOG_PREFIX = re.compile(r"^\d\d-\d\d\s+[\d:.]+\s+\d+\s+\d+\s+[VDIWEF]\s+")
+_NET_EXC = re.compile(r"(?:[A-Za-z_]\w*\.)*([A-Z]\w*(?:Exception|Error))")
+_EXC_CLASS = re.compile(r"(?:[A-Za-z_]\w*\.)+([A-Z]\w*(?:Exception|Error))")
 _PACKAGE_PLACEHOLDER = "<package>"
 
 
@@ -96,31 +104,49 @@ def _crash_step(pr: HarnessProfileResult) -> int:
 
 
 def _crash_findings(ctx: _Ctx) -> list[Finding]:
-    out: list[Finding] = []
+    """One finding per distinct crash/ANR signature on the profile; repeats are counted, not duplicated."""
+    groups: dict[str, list[HarnessCrash]] = {}
     for crash in ctx.pr.crashes:
-        out.append(_crash(ctx, crash))
-    return out
+        groups.setdefault(f"{crash.type}|{crash_signature(crash.excerpt)}", []).append(crash)
+    return [_crash(ctx, g[0], len(g)) for g in groups.values()]
 
 
-def _crash(ctx: _Ctx, crash: HarnessCrash) -> Finding:
+def _crash(ctx: _Ctx, crash: HarnessCrash, times: int = 1) -> Finding:
     step = _crash_step(ctx.pr)
     ev = ctx.evidence(Evidence(kind="logcat", excerpt=crash.excerpt[:1500]))
+    where = PROFILE_BY_ID[ctx.pr.profile_id].name
+    again = f" It happened {times} times." if times > 1 else ""
     if crash.type == "anr":
         return ctx.make(
-            "rt.anr", "reliability", "App Not Responding (ANR)", "critical",
-            f"The app stopped responding on profile '{ctx.pr.profile_id}'.", ev,
+            "rt.anr", "reliability", f"App not responding (ANR) on {where}", "critical",
+            f"The app stopped responding on profile '{ctx.pr.profile_id}'." + again, ev,
             "Blocking work (network, disk, locks) on the main thread.",
             "Move I/O off the main thread (coroutines/executors) and show progress states.",
             step,
-        )
+        )  # fmt: skip
     label = "Native crash" if crash.type == "native_crash" else "App crash"
+    exc = _EXC_CLASS.search(crash.excerpt)
+    detail = f": {exc.group(1)}" if exc and crash.type == "crash" else ""
     return ctx.make(
-        "rt.crash", "reliability", f"{label} on {ctx.pr.profile_id}", "critical",
-        f"The app crashed on profile '{ctx.pr.profile_id}'.", ev,
+        "rt.crash", "reliability", f"{label} on {where}{detail}", "critical",
+        f"The app crashed on profile '{ctx.pr.profile_id}'." + again, ev,
         "Unhandled exception, often from missing null/error handling under constrained conditions.",
         "Reproduce with the flow, fix the stack trace's root cause and add error handling.",
         step,
-    )
+    )  # fmt: skip
+
+
+def _human_log(line: str) -> str:
+    """Drop the logcat timestamp/pid/level prefix: '11-21 17:46:12.1 123 123 W OkHttp: x' -> 'OkHttp: x'."""
+    return _LOG_PREFIX.sub("", line.strip())[:200]
+
+
+def _network_kinds(errors: list[str]) -> str:
+    counts: Counter[str] = Counter()
+    for e in errors:
+        m = _NET_EXC.search(_human_log(e))
+        counts[m.group(1) if m else "network error"] += 1
+    return ", ".join(f"{k} ×{n}" if n > 1 else k for k, n in counts.most_common(3))
 
 
 def _profile_findings(
@@ -174,17 +200,17 @@ def _profile_findings(
             )
         )
     if pr.network_errors:
-        kinds = list(dict.fromkeys(e.split(":", 1)[0].strip() for e in pr.network_errors))
         out.append(
             ctx.make(
-                "rt.network_errors", "network", f"Network errors on {pr.profile_id}: {', '.join(kinds)}",
+                "rt.network_errors", "network",
+                f"Network errors on {PROFILE_BY_ID[pr.profile_id].name}: {_network_kinds(pr.network_errors)}",
                 "high",
-                "Network calls failed under this condition: " + "; ".join(pr.network_errors[:5]),
+                "Network calls failed under this condition: " + "; ".join(_human_log(e) for e in pr.network_errors[:5]),
                 ctx.evidence(Evidence(kind="logcat", excerpt="\n".join(pr.network_errors[:10]))),
                 "Requests without timeout/retry; no offline handling.",
                 "Add OkHttp timeouts + retry with backoff + offline state.",
             )
-        )
+        )  # fmt: skip
     if pr.stuck_loading:
         out.append(
             ctx.make(
@@ -218,7 +244,72 @@ def _profile_findings(
     return out
 
 
+_SEC_FIX = {
+    "sec.storage_secrets": (
+        "Secrets or personal data stored in plaintext on the device",
+        "The app writes tokens, passwords or personal data to SharedPreferences/files without encryption.",
+        "Use EncryptedSharedPreferences / the Android Keystore; never persist raw tokens or passwords.",
+    ),
+    "sec.storage_db": (
+        "Sensitive data in an unencrypted database",
+        "A SQLite database with sensitive-looking columns is stored unencrypted.",
+        "Encrypt the database (SQLCipher / Room with encryption) or avoid storing the values.",
+    ),
+    "sec.world_readable": (
+        "App files readable by other apps",
+        "Files were created with world-readable permissions (MODE_WORLD_READABLE or chmod 644+).",
+        "Create private files (MODE_PRIVATE) and share data through a FileProvider.",
+    ),
+    "sec.logcat_leaks": (
+        "Secrets or personal data written to the log",
+        "The app logs tokens, passwords, OTPs or personal data, readable through logcat.",
+        "Remove sensitive logging or guard it with BuildConfig.DEBUG; strip logs in release (R8).",
+    ),
+    "sec.exported_components": (
+        "Exported components reachable by other apps",
+        "Components marked exported can be started by any app, and some misbehave when started without data.",
+        "Set android:exported=false unless needed, require a permission, and validate every incoming intent.",
+    ),
+    "sec.cleartext_traffic": (
+        "Plain HTTP traffic observed",
+        "The app sent requests over unencrypted HTTP, readable and modifiable by anyone on the network.",
+        "Use HTTPS everywhere and set usesCleartextTraffic=false / a network security config.",
+    ),
+    "sec.debuggable": (
+        "Debuggable build",
+        "The installed app is debuggable, so anyone with adb can run code as the app and read its private data.",
+        "Build release variants with debuggable=false.",
+    ),
+}
+
+
+def _security_findings(run_id: str, checks: list[HarnessSecurityCheck], counts: dict[str, int]) -> list[Finding]:
+    out: list[Finding] = []
+    for c in checks:
+        if not c.ran or c.passed:
+            continue
+        rule_id = f"rt.{c.id}"
+        title, cause, fix = _SEC_FIX.get(c.id, (c.title, "See the evidence.", "Review the evidence and fix the cause."))
+        n = counts.get(rule_id, 0) + 1
+        counts[rule_id] = n
+        evidence = [Evidence(kind=e.kind, ref=e.ref, excerpt=e.excerpt) for e in c.evidence]
+        if not evidence:
+            evidence = [Evidence(kind="note", excerpt=c.note or c.title)]
+        out.append(
+            Finding(
+                id=finding_id(run_id, rule_id, n), run_id=run_id, source="runtime", category="security",
+                rule_id=rule_id, title=title, severity=c.severity,
+                description=f"{c.title}. {c.note or ''}".strip(),
+                evidence=evidence,
+                repro_steps=["Install the app on the test device and run the auto crawl", f"Check: {c.title}"],
+                affected_journey=JOURNEY, probable_cause=cause, suggested_fix=fix,
+            )
+        )  # fmt: skip
+    return out
+
+
 def runtime_findings(run_id: str, result: HarnessResult, package: str = _PACKAGE_PLACEHOLDER) -> list[Finding]:
     baseline = next((p.launch_ms for p in result.profiles if p.profile_id == "baseline" and p.launch_ms), None)
     counts: dict[str, int] = {}
-    return [f for pr in result.profiles for f in _profile_findings(run_id, pr, package, counts, baseline)]
+    found = [f for pr in result.profiles for f in _profile_findings(run_id, pr, package, counts, baseline)]
+    return found + _security_findings(run_id, result.security, counts)

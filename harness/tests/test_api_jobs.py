@@ -205,3 +205,18 @@ async def test_cancel_marks_cancelled(tmp_path):
     while runner.busy:
         await asyncio.sleep(0.01)
     assert job.status == "cancelled" and runner.results[job.job_id].profiles == []
+
+
+def test_job_result_carries_security_checks_and_honest_skips(tmp_path):
+    s = settings(tmp_path).model_copy(update={"security_enabled": True, "sudo_path": "/nonexistent/sudo"})
+    app = create_app(s, runner=device())
+    app.state.jobs._sleep = nosleep
+    c = TestClient(app)
+    job = c.post(
+        "/jobs", headers=H, files={"apk": ("a.apk", b"PK")}, data={"request": request_json(["baseline"])}
+    ).json()
+    assert wait_done(c, job["job_id"])["status"] == "done"
+    sec = {x["id"]: x for x in c.get(f"/jobs/{job['job_id']}/result", headers=H).json()["security"]}
+    assert {"sec.logcat_leaks", "sec.cleartext_traffic", "sec.storage_secrets", "sec.debuggable"} <= set(sec)
+    assert sec["sec.cleartext_traffic"]["ran"] is False and "tcpdump" in sec["sec.cleartext_traffic"]["note"]
+    assert all(x["passed"] for x in sec.values() if not x["ran"])  # a check that did not run never claims a failure
