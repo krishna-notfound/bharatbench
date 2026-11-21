@@ -12,9 +12,10 @@ import type { RunStatus } from "@/lib/types";
 import { CaptionTrack, runCaptionLoop, type CaptionFrame } from "./CaptionTrack";
 import { MAX_TEXT_CHARS, type ServerEvent, type VoiceState } from "./protocol";
 import { RealtimeClient, type ConnectionStatus } from "./RealtimeClient";
+import { loadLanguage, saveLanguage, type RealtimeLanguage } from "./languages";
 import { getTokenSafe } from "./token";
 
-export type RealtimeLanguage = "auto" | "hi-IN" | "en-IN";
+export type { RealtimeLanguage };
 
 export type RealtimeState = "idle" | "connecting" | "listening" | "thinking" | "working" | "speaking" | "offline";
 
@@ -452,6 +453,7 @@ export function useRealtime(): Realtime {
     (next: RealtimeLanguage) => {
       languageRef.current = next;
       setLanguageState(next);
+      saveLanguage(next);
       if (engineRef.current) {
         teardown();
         connect();
@@ -473,6 +475,14 @@ export function useRealtime(): Realtime {
   }, [connect, teardown]);
 
   useEffect(() => () => teardown(), [teardown]);
+
+  // Restore the remembered language after hydration (the first render is always "auto" so SSR matches).
+  useEffect(() => {
+    const stored = loadLanguage();
+    languageRef.current = stored;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reading localStorage must wait until after hydration
+    setLanguageState(stored);
+  }, []);
 
   const getLevel = useCallback((): number => {
     const engine = engineRef.current;

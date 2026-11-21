@@ -50,3 +50,34 @@ Header `api-subscription-key: <key>` on every endpoint (chat also accepts `Autho
 
 ## Limits
 Rate/concurrency limits are per plan (https://docs.sarvam.ai/api/getting-started/pricing#rate-limits).
+
+## Languages (f17, verified 2026-11-21)
+Offered = intersection of STT and TTS. Selector values are BCP-47 codes plus `auto`.
+
+| Language | Code | STT (saaras:v4) | TTS (bulbul:v3) |
+| --- | --- | --- | --- |
+| English (India) | en-IN | yes | yes |
+| Hindi | hi-IN | yes | yes |
+| Bengali | bn-IN | yes | yes |
+| Tamil | ta-IN | yes | yes |
+| Telugu | te-IN | yes | yes |
+| Kannada | kn-IN | yes | yes |
+| Malayalam | ml-IN | yes | yes |
+| Marathi | mr-IN | yes | yes |
+| Gujarati | gu-IN | yes | yes |
+| Punjabi | pa-IN | yes | yes |
+| Odia | od-IN | yes | yes |
+
+- STT supports 23 languages (22 Indian + English): the 11 above plus as-IN, ur-IN, ne-IN, kok-IN, ks-IN, sd-IN, sa-IN,
+  sat-IN, mni-IN, brx-IN, mai-IN, doi-IN. They are NOT offered because Bulbul has no voice for them.
+  Source: https://docs.sarvam.ai/api/api-guides-tutorials/models/saaras (Language Support table).
+- Realtime STT WebSocket takes `language_code` = any of 24 values or `auto` (detected `language` returned on partials/finals only in
+  auto). REST takes `unknown` for auto. Source: https://docs.sarvam.ai/api-reference/speech-to-text/realtime
+- TTS accepts exactly these 11 codes on both bulbul:v3 and bulbul:v4-flash.
+  Sources: https://docs.sarvam.ai/api-reference/text-to-speech/convert and
+  https://docs.sarvam.ai/api/api-guides-tutorials/models/bulbul (Language Support).
+- bulbul:v3 speakers are not locked to a language; the docs recommend shubh for hi/te/kn/od, rehan for bn, ratan for ta
+  (https://docs.sarvam.ai/api/api-guides-tutorials/text-to-speech/bulbul-v3-best-practices#speaker-selection-by-language).
+  We use `shubh` everywhere except bn-IN (`rehan`) and ta-IN (`ratan`); `SARVAM_TTS_SPEAKER` overrides all.
+- Chat model sarvam-105b(-conversations): 10 most-spoken Indian languages + English, native script, romanised and code-mixed input
+  (https://docs.sarvam.ai/api/token-factory/models/sarvam-105b).

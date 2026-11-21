@@ -25,7 +25,8 @@ class Turn:
     generation_id: int
     user_text: str
     from_voice: bool = False
-    language: str | None = None
+    language: str | None = None  # explicit user selection only (None = auto)
+    stt_language: str | None = None  # language the STT reported for this voice turn
     scripted: str | None = None  # spoken verbatim, no LLM
     job_note: str | None = None  # system note that triggers an LLM turn with no user text (job finished)
     task: asyncio.Task[None] | None = None
@@ -78,6 +79,7 @@ class TurnManager:
         *,
         from_voice: bool = False,
         language: str | None = None,
+        stt_language: str | None = None,
         scripted: str | None = None,
         speculative: bool = False,
         grace_s: float = 0.0,
@@ -94,6 +96,7 @@ class TurnManager:
                 text,
                 from_voice=from_voice,
                 language=language,
+                stt_language=stt_language,
                 scripted=scripted,
                 speculative=speculative,
             )

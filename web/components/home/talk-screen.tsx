@@ -7,14 +7,10 @@ import { Orb, ORB_LABEL } from "@/components/orb/orb";
 import { useAgent } from "@/components/voice/realtime-provider";
 import { ToolChip, JobCard } from "@/components/voice/chat-parts";
 import { PRIMARY_CTA } from "@/components/shell/surface";
-import type { RealtimeLanguage } from "@/lib/realtime/useRealtime";
+import { LANGUAGE_OPTIONS, type RealtimeLanguage } from "@/lib/realtime/languages";
 import { cn } from "@/lib/utils";
 
-const LANGUAGES: { value: RealtimeLanguage; label: string }[] = [
-  { value: "auto", label: "Auto" },
-  { value: "hi-IN", label: "हिन्दी" },
-  { value: "en-IN", label: "English" },
-];
+
 
 const STATE_LABEL: Record<string, string> = {
   connecting: "Connecting…",
@@ -212,7 +208,7 @@ export function TalkScreen() {
           onChange={(e) => rt.setLanguage(e.target.value as RealtimeLanguage)}
           className="h-12 rounded-full border border-border bg-card px-4 text-sm outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
         >
-          {LANGUAGES.map((l) => (
+          {LANGUAGE_OPTIONS.map((l) => (
             <option key={l.value} value={l.value}>
               {l.label}
             </option>

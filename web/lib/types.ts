@@ -1,3 +1,5 @@
+import type { RealtimeLanguage } from "@/lib/realtime/languages";
+
 // Frozen mirror of api/app/models.py. Do not edit without orchestrator approval.
 
 export type Severity = "critical" | "high" | "medium" | "low";
@@ -117,7 +119,7 @@ export type VoiceServerMessage =
   | { type: "error"; message: string };
 
 export type VoiceClientMessage =
-  | { type: "start"; language: "auto" | "hi-IN" | "en-IN"; run_id: string | null }
+  | { type: "start"; language: RealtimeLanguage; run_id: string | null }
   | { type: "speech_end" }
   | { type: "interrupt" }
   | { type: "text"; text: string };

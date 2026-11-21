@@ -10,7 +10,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.models import RunService
-from app.voice import agent, sarvam_stt
+from app.voice import agent, languages, sarvam_stt
 from app.voice.sarvam_stt import BYTES_PER_SECOND, MAX_UTTERANCE_SECONDS, SarvamError
 from app.voice.tools import ToolContext
 
@@ -55,7 +55,7 @@ class VoiceSession:
 
     # ----- client messages -----
     async def handle_start(self, language: str, run_id: str | None) -> None:
-        if language in ("auto", "hi-IN", "en-IN"):
+        if language in languages.SESSION_LANGUAGES:
             self.language = language
         self.active_run_id = run_id
         if not self.configured:

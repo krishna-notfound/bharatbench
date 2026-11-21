@@ -1,13 +1,22 @@
 """System prompt for the BharatBench voice agent."""
 
-import re
+from app.voice import languages
 
 SYSTEM_PROMPT = """You are BharatBench's voice assistant. BharatBench tests Android apps (APKs) under real Indian \
 network and device conditions and reports reliability findings.
 
+How to talk: you are a friendly senior Android engineer chatting with a teammate, not a report generator. \
+Sound like a real person: use contractions, short and varied sentences, and plain words. Acknowledge what the \
+user said or asked in a natural way, but never repeat their question back. Explain a problem as cause, then \
+what it does to the user, then the fix, in plain words. When it helps, end with one natural follow-up question \
+or offer. Say numbers the way people speak ("about 45 percent", "two critical issues", "around three seconds"). \
+No lists, no markdown, no emojis, no headings, never "As an AI", no stiff openers like "Certainly" or "I \
+apologize". Do not over-apologise: if something failed, say so plainly and say what you can do next. Say \
+"I'm not sure" only when a tool gave you nothing, and never fill the gap with a guess.
+
 Rules:
 - {language_rule} Keep it to at most two \
-short spoken sentences unless the user asks you to explain a finding. No markdown, no lists, no emojis.
+short spoken sentences unless the user asks you to explain a finding.
 - Never invent results. Only report what tools returned. If a tool returns an error, say so honestly.
 - To test an app call start_test. Pick profile ids from list_profiles: for "slow network" use flaky_network and \
 budget_2gb; for "low memory" use budget_2gb; the default is baseline, budget_2gb, flaky_network. To re-run, pass the \
@@ -27,41 +36,22 @@ background. To see whether fixes helped, use compare_runs.
 """
 
 
-_DEVANAGARI = re.compile(r"[ऀ-ॿ]")
-_WORD = re.compile(r"[a-z]+")
-# Romanised Hindi words that rarely occur in English. Two hits (or one strong) mark the message as Hinglish.
-_STRONG = {"hai", "hain", "kya", "kyun", "kaise", "batao", "bataiye", "karo", "kijiye", "mera", "mere", "meri",
-           "mujhe", "nahi", "nahin", "chahiye", "sabse", "accha", "acha", "theek", "thik", "ruko", "chalao", "dikhao"}
-_WEAK = {"ka", "ki", "ke", "ko", "se", "aur", "bhi", "tum", "aap", "raha", "rahi", "wala", "wali", "bada", "abhi"}
-
-_RULES = {
-    "en": "Reply in English, because the user wrote in English.",
-    "hi": "Reply in Hindi using Devanagari script.",
-    "hinglish": "Reply in Hinglish: Hindi written in Latin script mixed with English, matching the user's style.",
-}
+def detect_reply_language(user_text: str, preference: str | None, stt_code: str | None = None) -> str:
+    """Language for the reply: explicit preference wins, else the message's script / STT code / Hinglish."""
+    return languages.detect_reply_language(user_text, preference, stt_code)
 
 
-def detect_reply_language(user_text: str, preference: str | None) -> str:
-    """Language for the reply: explicit preference wins, else mirror the user's last message."""
-    if preference == "hi-IN":
-        return "hi"
-    if preference == "en-IN":
-        return "en"
-    if _DEVANAGARI.search(user_text):
-        return "hi"
-    words = _WORD.findall(user_text.lower())
-    strong = sum(w in _STRONG for w in words)
-    weak = sum(w in _WEAK for w in words)
-    return "hinglish" if strong >= 1 and strong + weak >= 2 or strong >= 2 else "en"
-
-
-def build_system_prompt(active_run_id: str | None, user_text: str = "", preference: str | None = "auto") -> str:
-    rule = _RULES[detect_reply_language(user_text, preference)]
+def build_system_prompt(
+    active_run_id: str | None,
+    user_text: str = "",
+    preference: str | None = "auto",
+    stt_code: str | None = None,
+) -> str:
+    rule = languages.reply_rule(detect_reply_language(user_text, preference, stt_code))
     return SYSTEM_PROMPT.format(active_run=active_run_id or "none", language_rule=rule)
 
 
-def language_reminder(user_text: str, preference: str | None = "auto") -> str:
+def language_reminder(user_text: str, preference: str | None = "auto", stt_code: str | None = None) -> str:
     """Short system note placed after the history so earlier turns in another language cannot override it."""
-    return "Language for your next reply (overrides the language of earlier messages): " + _RULES[
-        detect_reply_language(user_text, preference)
-    ]
+    key = detect_reply_language(user_text, preference, stt_code)
+    return "Language for your next reply (overrides the language of earlier messages): " + languages.reply_rule(key)

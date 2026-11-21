@@ -7,16 +7,12 @@ import { Orb, ORB_LABEL } from "@/components/orb/orb";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import type { RealtimeLanguage } from "@/lib/realtime/useRealtime";
+import { LANGUAGE_OPTIONS, type RealtimeLanguage } from "@/lib/realtime/languages";
 import { OPEN_AGENT_EVENT } from "./agent-events";
 import { Thread } from "./chat-parts";
 import { useAgent } from "./realtime-provider";
 
-const LANGUAGES: { value: RealtimeLanguage; label: string }[] = [
-  { value: "auto", label: "Auto" },
-  { value: "hi-IN", label: "हिन्दी" },
-  { value: "en-IN", label: "English" },
-];
+
 
 const DESKTOP_QUERY = "(min-width: 768px)";
 
@@ -126,7 +122,7 @@ export function VoicePanel() {
                 onChange={(e) => rt.setLanguage(e.target.value as RealtimeLanguage)}
                 className="h-8 rounded-full border border-border bg-card px-3 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                {LANGUAGES.map((l) => (
+                {LANGUAGE_OPTIONS.map((l) => (
                   <option key={l.value} value={l.value}>
                     {l.label}
                   </option>

@@ -18,6 +18,7 @@ import httpx
 from app.realtime import providers
 from app.realtime.base import ProviderError, TextToSpeech
 from app.settings import Settings
+from app.voice import languages
 from app.voice.config import SARVAM_BASE_URL, TTS_SAMPLE_RATE, tts_model, tts_speaker
 
 log = logging.getLogger(__name__)
@@ -59,11 +60,12 @@ class SarvamStreamTTS(TextToSpeech):
             pass
 
     async def synthesize(self, text: str, *, language: str, voice: str | None = None) -> AsyncIterator[bytes]:
+        code = providers.pick_language(text, language)
         body = {
             "text": text[:3500],
-            "language_code": providers.pick_language(text, language),
+            "language_code": code,
             "model": tts_model(),
-            "speaker": voice or tts_speaker(),
+            "speaker": voice or languages.tts_speaker(code, tts_speaker()),
             "speech_sample_rate": self.sample_rate,
             "output_audio_codec": "linear16",
         }

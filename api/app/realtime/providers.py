@@ -10,7 +10,6 @@ import base64
 import io
 import json
 import logging
-import re
 import wave
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -19,12 +18,11 @@ from typing import Any
 import httpx
 
 from app.realtime.base import ProviderError
-from app.voice import sarvam_stt
+from app.voice import languages, sarvam_stt
 from app.voice.config import SARVAM_BASE_URL, TTS_SAMPLE_RATE, tts_model, tts_speaker
 
 log = logging.getLogger(__name__)
 TTS_TIMEOUT = 30.0
-_DEVANAGARI = re.compile(r"[ऀ-ॿ]")
 
 
 # ------------------------------------------------------------------ STT
@@ -51,20 +49,22 @@ def wav_to_pcm(data: bytes) -> tuple[bytes, int]:
         return pcm, w.getframerate()
 
 
-def pick_language(text: str, preference: str | None) -> str:
-    if preference in ("hi-IN", "en-IN"):
-        return str(preference)
-    return "hi-IN" if _DEVANAGARI.search(text) else "en-IN"
+def pick_language(
+    text: str, preference: str | None, stt_code: str | None = None, user_text: str = ""
+) -> str:
+    """Bulbul language_code for `text` (see app.voice.languages.tts_language)."""
+    return languages.tts_language(text, preference, stt_code, user_text)
 
 
 async def synthesize(
     client: httpx.AsyncClient, text: str, language: str | None, api_key: str
 ) -> tuple[bytes, int]:
+    code = pick_language(text, language)
     body = {
         "text": text[:2500],
-        "language_code": pick_language(text, language),
+        "language_code": code,
         "model": tts_model(),
-        "speaker": tts_speaker(),
+        "speaker": languages.tts_speaker(code, tts_speaker()),
         "speech_sample_rate": TTS_SAMPLE_RATE,
         "output_audio_codec": "wav",
     }

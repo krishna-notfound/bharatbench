@@ -42,6 +42,7 @@ from app.realtime.stt_link import LinkStatus, SttLink
 from app.realtime.tts import build_tts
 from app.realtime.turns import Turn, TurnManager
 from app.settings import Settings
+from app.voice import languages
 from app.voice.config import TTS_SAMPLE_RATE
 from app.voice.prompts import build_system_prompt, language_reminder
 
@@ -78,7 +79,8 @@ Realtime voice rules:
 - Tests run in the background. start_test only STARTS a test; never say a test has finished, passed or found \
 issues unless a job update told you so or get_run_status shows status done. When a job update arrives you will \
 be told in the conversation; until then say it is running.
-- Keep replies short and conversational, one to three sentences, plain text.
+- This is a live conversation, so talk the way a friendly colleague would: one to three short sentences, plain text, spoken numbers ("about 45 percent"), and a natural follow-up question when it genuinely helps. Open with a quick human reaction to what they asked ("Sure, let me look", "Good news", "Hmm, that one didn't go well") instead of a formal preamble, and vary your openers from turn to turn.
+- Whatever language you reply in, keep technical terms (ANR, APK, logcat, crash, RAM, API) in English.
 """
 PROGRESS = {
     "queued": 0.05,
@@ -281,7 +283,7 @@ class RealtimeSession:
         return self.settings.sarvam_api_key or ""
 
     def tts_language(self, turn: Turn, text: str) -> str:
-        return providers.pick_language(text, self.language_pref(turn))
+        return providers.pick_language(text, self.language_pref(turn), turn.stt_language, turn.user_text)
 
     def language_pref(self, turn: Turn) -> str | None:
         lang = turn.language or self.language
@@ -379,7 +381,7 @@ class RealtimeSession:
         if msg["type"] != "session.start":
             raise _CloseSession(4400)
         token = msg.get("token") or None
-        if msg.get("language") in ("auto", "hi-IN", "en-IN"):
+        if msg.get("language") in languages.SESSION_LANGUAGES:
             self.language = msg["language"]
         if msg.get("mode") in ("voice", "text"):
             self.mode = msg["mode"]
@@ -593,7 +595,9 @@ class RealtimeSession:
                 return
             self._nodding = False
             await self.tm.cancel("barge_in", current.generation_id)
-            await self._start_turn(self._merge_prefix(text), from_voice=True, arrived=arrived, announce=False)
+            await self._start_turn(
+                self._merge_prefix(text), from_voice=True, arrived=arrived, announce=False, stt_language=language
+            )
             return
         self._nodding = False
         self.arbiter.clear()
@@ -610,7 +614,12 @@ class RealtimeSession:
             self._schedule_prefix_flush()
             return
         await self._start_turn(
-            text, from_voice=True, speculative=speculative, arrived=arrived, announce=not speculative
+            text,
+            from_voice=True,
+            speculative=speculative,
+            arrived=arrived,
+            announce=not speculative,
+            stt_language=language,
         )
 
     def _merge_prefix(self, text: str) -> str:
@@ -635,9 +644,9 @@ class RealtimeSession:
         try:
             await asyncio.sleep(RESUMED_HOLD_S)
             text, self._prefix = self._prefix, ""
-            self._prefix_language = None
+            detected, self._prefix_language = self._prefix_language, None
             if text:
-                await self._start_turn(text, from_voice=True)
+                await self._start_turn(text, from_voice=True, stt_language=detected)
         finally:
             if self._prefix_task is asyncio.current_task():
                 self._prefix_task = None
@@ -656,6 +665,7 @@ class RealtimeSession:
         speculative: bool = False,
         arrived: float | None = None,
         announce: bool = True,
+        stt_language: str | None = None,
     ) -> None:
         await self.tm.cancel("superseded")  # a new utterance replaces any reply in flight
         self._flush_notes()
@@ -667,6 +677,7 @@ class RealtimeSession:
             text,
             from_voice=from_voice,
             language=language,
+            stt_language=stt_language,
             speculative=speculative,
             grace_s=self.settings.endpoint_grace_ms / 1000,
         )
@@ -760,14 +771,15 @@ class RealtimeSession:
 
     async def _llm_loop(self, turn: Turn, speaker: _Speaker) -> None:
         lang = turn.language or self.language
+        stt = turn.stt_language
         system = {
             "role": "system",
-            "content": build_system_prompt(self.active_run_id, turn.user_text, lang) + REALTIME_ADDENDUM,
+            "content": build_system_prompt(self.active_run_id, turn.user_text, lang, stt) + REALTIME_ADDENDUM,
         }
         tail = (
             {"role": "system", "content": turn.job_note}
             if turn.job_note
-            else {"role": "system", "content": language_reminder(turn.user_text, lang)}
+            else {"role": "system", "content": language_reminder(turn.user_text, lang, stt)}
         )
         msgs: list[dict[str, Any]] = [system, *self.history[-HISTORY_LIMIT:], tail]
         for round_no in range(registry.MAX_TOOL_ROUNDS + 1):
