@@ -6,6 +6,7 @@ import os
 from typing import Any, get_args
 
 from app.models import Finding, ProfileId, Run, RunService
+from app.planner import TestPlan, plan_followup, plan_initial
 from app.profiles import PROFILES, UNSUPPORTED_CONDITIONS
 
 _FOCUS = ("security", "performance", "reliability", "network", "all")
@@ -112,6 +113,31 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "Evidence of one finding: log excerpts and artifact URLs (screenshots, logs) to describe honestly.",
         {"finding_id": {"type": "string"}},
         ["finding_id"],
+    ),
+    _fn(
+        "plan_tests",
+        "Decide which tests to run and why, WITHOUT starting anything. plan_kind 'initial' plans from the app's "
+        "permissions and size; 'followup' plans from the findings of a finished run. Returns profiles, "
+        "journey_steps and a plain-language reason per profile.",
+        {
+            "apk_or_run": {"type": "string", "description": "Run id or apk name; default the active run"},
+            "plan_kind": {
+                "type": "string",
+                "enum": ["initial", "followup"],
+                "description": "default: followup if the run finished, else initial",
+            },
+        },
+        [],
+    ),
+    _fn(
+        "start_planned_test",
+        "Compute the test plan (same as plan_tests) and START it. Returns the new run id and the reasons, so you "
+        "can tell the user why those tests were chosen.",
+        {
+            "apk_or_run": {"type": "string", "description": "Run id or apk name; default the active run"},
+            "plan_kind": {"type": "string", "enum": ["initial", "followup"]},
+        },
+        [],
     ),
     _fn(
         "compare_runs",
@@ -489,7 +515,79 @@ async def _compare_runs(service: RunService, args: dict[str, Any], ctx: ToolCont
     }
 
 
+async def _make_plan(
+    service: RunService, args: dict[str, Any], ctx: ToolContext
+) -> tuple[Run, TestPlan] | dict[str, Any]:
+    ref = args.get("apk_or_run") or args.get("run_id") or ctx.active_run_id
+    if ref:
+        run = await _resolve_run(service, ref, ctx)
+        if run is None:
+            return _not_found(ref)
+    else:
+        runs = await service.list_runs()
+        if not runs:
+            return {"error": "no uploaded APK yet; ask the user to upload an APK in the web UI"}
+        run = next((r for r in runs if r.status != "failed"), runs[0])
+    kind = args.get("plan_kind")
+    if kind not in (None, "initial", "followup"):
+        return {"error": "plan_kind must be 'initial' or 'followup'"}
+    findings = await service.list_findings(run.id)
+    if kind is None:
+        kind = "followup" if run.summary is not None and run.status == "done" else "initial"
+    if kind == "initial":
+        if run.app is None:
+            return {"error": "the app has not been analysed yet, so there is nothing to plan from; try again shortly"}
+        return run, plan_initial(run.app, [f for f in findings if f.source == "static"])
+    return run, plan_followup(run, findings)
+
+
+def _plan_dict(plan: TestPlan) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "plan_kind": plan.kind,
+        "profiles": plan.profiles,
+        "journey_steps": plan.journey_steps,
+        "reasons": [r.model_dump() for r in plan.reasons],
+    }
+    if plan.note:
+        out["note"] = plan.note
+    return out
+
+
+async def _plan_tests(service: RunService, args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    made = await _make_plan(service, args, ctx)
+    if isinstance(made, dict):
+        return made
+    run, plan = made
+    return {"source_run_id": run.id, **_plan_dict(plan), "started": False}
+
+
+async def _start_planned_test(service: RunService, args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    made = await _make_plan(service, args, ctx)
+    if isinstance(made, dict):
+        return made
+    source, plan = made
+    if not plan.profiles:
+        return {
+            "source_run_id": source.id,
+            **_plan_dict(plan),
+            "started": False,
+            "note": plan.note or "the plan has no tests to run",
+        }
+    steps = max(1, min(plan.journey_steps, MAX_JOURNEY_STEPS))
+    run = await service.rerun(source.id, plan.profiles, steps)
+    return {
+        "run_id": run.id,
+        "status": run.status,
+        "source_run_id": source.id,
+        **_plan_dict(plan),
+        "started": True,
+        "note": "started in the background; check get_run_status or get_report later",
+    }
+
+
 _NEW_TOOLS = {
+    "plan_tests": _plan_tests,
+    "start_planned_test": _start_planned_test,
     "get_report": _get_report,
     "suggest_improvements": _suggest_improvements,
     "run_deeper_tests": _run_deeper_tests,
