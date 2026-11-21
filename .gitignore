@@ -16,3 +16,5 @@ harness/jobs/
 .pytest_tmp/
 .claude/worktrees/
 .playwright-mcp/
+supabase/.temp/
+api/supabase/

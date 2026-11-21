@@ -113,7 +113,7 @@ def _dex_facts(apk: object) -> tuple[list[str], list[str], int]:
         for s in dex.get_strings():
             if len(strings) >= MAX_STRINGS:
                 break
-            text = str(s)
+            text = str(s).replace("\0", "")
             if len(text) <= MAX_STRING_LEN:
                 strings.append(text)
         classes.extend(dex.get_classes_names())

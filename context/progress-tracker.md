@@ -4,7 +4,7 @@ Must describe the **actual** state of the repo.
 
 ## Current Phase
 
-- Phase 1 — Prototype build (HackFront 2026). Contracts frozen; features f02–f06 being built in parallel.
+- Phase 1 — Prototype build (HackFront 2026). f02–f08 merged; API storage = Supabase (STORAGE_BACKEND=supabase in api/.env); runtime pending EC2 with KVM.
 
 ## Current Goal
 

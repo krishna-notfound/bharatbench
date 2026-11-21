@@ -34,7 +34,11 @@ class SupabaseStorage:
 
     async def _write(self, method: str, table: str, *, params: dict[str, str] | None = None, json: Any = None) -> None:
         r = await self.client.request(
-            method, f"{self._base}/{table}", params=params, json=json, headers={"Prefer": "return=minimal"}
+            method,
+            f"{self._base}/{table}",
+            params=params,
+            json=_strip_nul(json),
+            headers={"Prefer": "return=minimal"},
         )
         r.raise_for_status()
 
@@ -119,3 +123,14 @@ class SupabaseStorage:
             "events", {"select": "seq", "run_id": f"eq.{run_id}", "order": "seq.desc", "limit": "1"}
         )
         return int(rows[0]["seq"]) + 1 if rows else 1
+
+
+def _strip_nul(value: Any) -> Any:
+    """Postgres text/jsonb rejects U+0000 (APK strings can contain it); drop it before writing."""
+    if isinstance(value, str):
+        return value.replace("\0", "")
+    if isinstance(value, list):
+        return [_strip_nul(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _strip_nul(v) for k, v in value.items()}
+    return value

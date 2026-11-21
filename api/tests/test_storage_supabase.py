@@ -100,3 +100,9 @@ async def test_events_and_next_seq(storage):
     assert [e.seq for e in await storage.list_events("r1")] == [1, 2, 3]
     assert [e.seq for e in await storage.list_events("r1", after_seq=1)] == [2, 3]
     assert await storage.next_seq("r1") == 4
+
+
+def test_strip_nul_removes_nul_recursively():
+    from app.storage.supabase import _strip_nul
+
+    assert _strip_nul({"a": ["x\x00y", {"b": "\x00"}], "n": 1}) == {"a": ["xy", {"b": ""}], "n": 1}
