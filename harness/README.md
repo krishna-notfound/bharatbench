@@ -4,6 +4,15 @@ FastAPI service that installs an APK on a headless Android emulator, applies con
 bounded journey and returns real evidence (`HarnessResult`). API: `contracts/README.md` section 4.
 It is the only component that touches ADB. Binds `127.0.0.1` only; every route needs `X-Harness-Token`.
 
+## Device kinds (f14)
+
+`DEVICE_KIND=redroid` (default) drives an Android 12 redroid Docker container at `ANDROID_SERIAL=127.0.0.1:5555`
+(no KVM needed); `DEVICE_KIND=emulator` keeps the original emulator-console mechanisms.
+On redroid: budget_2gb = docker `--memory=2g` + `tc netem` on the container's host-side veth (download 2mbit/200ms,
+upload policed); flaky_network = `tc netem loss 100%` 6 s on / 4 s off; low_storage is **not applied** (container
+`/data` is the shared host disk); battery_saver / process_death use adb. `tc` runs via `sudo -n` (NOPASSWD drop-in
+for `/usr/sbin/tc` only). Host setup: `bash deploy/setup_harness_ec2.sh` (needs `harness/.env` with `HARNESS_TOKEN`).
+
 ## Local dev (no emulator needed)
 
 ```bash

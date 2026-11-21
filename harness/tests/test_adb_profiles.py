@@ -105,3 +105,89 @@ async def test_baseline_noop(adb, runner):
     assert await pm.apply("baseline") == "no shaping"
     await pm.revert("baseline")
     assert runner.calls == []
+
+
+# ---- redroid (tc on host veth) ----
+IP_LINK_CONTAINER = "2: eth0@if4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP\n"
+IP_LINK_HOST = (
+    "1: lo: <LOOPBACK> mtu 65536\n"
+    "3: docker0: <BROADCAST> mtu 1500\n"
+    "4: veth5ae5bd0@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 master docker0\n"
+)
+
+
+def redroid_pm(responses=None):
+    adb_r = FakeRunner({"ip -o link show eth0": (0, IP_LINK_CONTAINER)})
+    host_r = FakeRunner({"/usr/sbin/ip -o link": (0, IP_LINK_HOST), **(responses or {})})
+    pm = ProfileManager(Adb("adb", "127.0.0.1:5555", adb_r), nosleep, "redroid", host=host_r)
+    return pm, adb_r, host_r
+
+
+def tc_calls(host_r):
+    return [c[3:] for c in host_r.calls if c[:3] == ["sudo", "-n", "/usr/sbin/tc"]]
+
+
+def test_veth_discovery_parsers():
+    from harness.profiles import find_link_name, parse_peer_ifindex
+
+    assert parse_peer_ifindex(IP_LINK_CONTAINER) == 4
+    assert parse_peer_ifindex("garbage") is None
+    assert find_link_name(IP_LINK_HOST, 4) == "veth5ae5bd0"
+    assert find_link_name(IP_LINK_HOST, 9) is None
+
+
+async def test_redroid_budget_netem_and_revert():
+    pm, _, host_r = redroid_pm()
+    note = await pm.apply("budget_2gb")
+    await pm.revert("budget_2gb")
+    calls = tc_calls(host_r)
+    assert calls[0] == ["qdisc", "replace", "dev", "veth5ae5bd0", "root", "netem", "rate", "2mbit", "delay", "200ms", "100ms"]
+    assert calls[1][:5] == ["qdisc", "replace", "dev", "veth5ae5bd0", "handle"]
+    assert "police" in calls[2]
+    assert calls[-2:] == [
+        ["qdisc", "del", "dev", "veth5ae5bd0", "root"],
+        ["qdisc", "del", "dev", "veth5ae5bd0", "ingress"],
+    ]
+    assert "2 GB" in note and "veth5ae5bd0" in note
+
+
+async def test_redroid_flaky_blackout_cycles():
+    pm, _, host_r = redroid_pm()
+    await pm.apply("flaky_network")
+    for _ in range(8):
+        await asyncio.sleep(0)
+    await pm.revert("flaky_network")
+    calls = tc_calls(host_r)
+    assert ["qdisc", "replace", "dev", "veth5ae5bd0", "root", "netem", "loss", "100%"] in calls
+    assert ["qdisc", "del", "dev", "veth5ae5bd0", "root"] in calls
+    assert pm.toggles >= 1
+
+
+async def test_redroid_tc_failure_is_not_applied():
+    pm, _, _ = redroid_pm({"qdisc replace": (1, "sudo: a password is required")})
+    with pytest.raises(ProfileError, match="tc qdisc"):
+        await pm.apply("budget_2gb")
+
+
+async def test_redroid_revert_idempotent_when_no_qdisc():
+    pm, _, _ = redroid_pm({"qdisc del": (2, "Error: Invalid handle.")})
+    await pm.net.device()
+    await pm.revert("budget_2gb")  # must not raise
+
+
+async def test_redroid_flaky_tc_failure_is_not_applied():
+    pm, _, _ = redroid_pm({"netem loss": (2, "Error: Specified qdisc kind is unknown.")})
+    with pytest.raises(ProfileError, match="qdisc kind is unknown"):
+        await pm.apply("flaky_network")
+
+
+async def test_redroid_missing_veth_fails_fast():
+    pm, _, _ = redroid_pm({"/usr/sbin/ip -o link": (0, "1: lo: <LOOPBACK>\n")})
+    with pytest.raises(ProfileError, match="no host interface"):
+        await pm.apply("flaky_network")
+
+
+async def test_redroid_low_storage_refused(adb):
+    pm = ProfileManager(adb, nosleep, "redroid")
+    with pytest.raises(ProfileError, match="shared host disk"):
+        await pm.apply("low_storage")
