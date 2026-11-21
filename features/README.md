@@ -12,7 +12,8 @@ filled in before any code for that feature is written.**
 | f03 | `f03_analyzer.md` | api/analyzer | f01 | Specced |
 | f04 | `f04_harness.md` | harness (EC2) | f01 | Specced |
 | f05 | `f05_voice_agent.md` | api/voice + web/voice | f01, f02 | Specced |
-| f06 | `f06_web_ui.md` | web | f01 | Specced |
+| f06 | `f06_web_ui.md` | web | f01 | Built |
+| f07 | `f07_oryn_redesign.md` | web redesign | f05, f06 | In progress |
 
 Deferred: GitHub build pipeline, Supabase storage/auth, Resend emails.
 
