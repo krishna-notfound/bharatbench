@@ -22,7 +22,7 @@ async def nosleep(_: float) -> None:
 
 
 def settings(tmp_path) -> Settings:
-    return Settings(harness_token=TOKEN, jobs_dir=tmp_path / "jobs")
+    return Settings(harness_token=TOKEN, jobs_dir=tmp_path / "jobs", device_kind="emulator", android_serial="emulator-5554")
 
 
 def device() -> FakeDevice:

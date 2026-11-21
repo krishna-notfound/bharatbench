@@ -1,0 +1,16 @@
+[Unit]
+Description=BharatBench harness (FastAPI, drives the redroid Android device)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bharatbench/harness
+EnvironmentFile=/home/ubuntu/bharatbench/harness/.env
+ExecStartPre=-/usr/bin/adb connect 127.0.0.1:5555
+ExecStart=/home/ubuntu/.local/bin/uv run --frozen uvicorn harness.main:app --host 127.0.0.1 --port 8100
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

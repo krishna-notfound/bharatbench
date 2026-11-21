@@ -160,7 +160,10 @@ class JobRunner:
 
     async def _run_profile(self, job: HarnessJob, req: HarnessJobRequest, pid: ProfileId) -> HarnessProfileResult:
         res = HarnessProfileResult(profile_id=pid, applied=False, launched=False)
-        pm = ProfileManager(self.adb, self._sleep)
+        cfg = self.settings
+        pm = ProfileManager(
+            self.adb, self._sleep, cfg.device_kind, tc=cfg.tc_path, ip=cfg.ip_path, sudo=cfg.sudo_path
+        )
         d = self.job_dir(job.job_id)
         pkg = req.package_name
         try:
@@ -192,7 +195,7 @@ class JobRunner:
                         index=len(res.steps),
                         action="toggle_network",
                         ok=pm.toggles > 0,
-                        note=f"{pm.toggles} data/wifi off-on cycles completed",
+                        note=f"{pm.toggles} network blackout/restore cycles completed",
                     )
                 )
             ev = await evidence.collect(self.adb, pkg, pid, d)
