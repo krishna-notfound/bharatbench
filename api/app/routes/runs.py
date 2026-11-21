@@ -3,9 +3,11 @@ from pathlib import Path
 from typing import get_args
 
 import anyio
-from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 
+from app.auth.supabase import bearer_token, verify_token
+from app.conversations.store import get_conversation_store
 from app.models import Finding, ProfileId, Run, RunEvent
 from app.profiles import PROFILE_BY_ID, PROFILES
 from app.report import render_markdown
@@ -36,8 +38,16 @@ async def _require_run(run_id: str) -> Run:
 
 
 @router.post("", status_code=201)
-async def create_run(request: Request, apk: UploadFile, profiles: str = Form(DEFAULT_PROFILES)) -> Run:
+async def create_run(
+    request: Request,
+    apk: UploadFile,
+    profiles: str = Form(DEFAULT_PROFILES),
+    authorization: str | None = Header(default=None),
+) -> Run:
     settings: Settings = request.app.state.settings
+    user = await verify_token(bearer_token(authorization), settings)
+    if user is None and settings.auth_required:
+        raise HTTPException(401, "Sign in required", headers={"WWW-Authenticate": "Bearer"})
     name = Path(apk.filename or "").name
     if not name.lower().endswith(".apk"):
         raise HTTPException(400, "Only .apk files are accepted")
@@ -56,14 +66,22 @@ async def create_run(request: Request, apk: UploadFile, profiles: str = Form(DEF
                 await out.write(chunk)
         if size == 0:
             raise HTTPException(400, "Uploaded file is empty")
-        return await get_run_service().create_run(str(tmp), name, profile_ids)
+        run = await get_run_service().create_run(str(tmp), name, profile_ids)
+        if user is not None:
+            await get_conversation_store().set_run_owner(run.id, user.id)
+        return run
     finally:
         tmp.unlink(missing_ok=True)
 
 
 @router.get("")
-async def list_runs() -> list[Run]:
-    return await get_run_service().list_runs()
+async def list_runs(authorization: str | None = Header(default=None)) -> list[Run]:
+    runs = await get_run_service().list_runs()
+    user = await verify_token(bearer_token(authorization))
+    if user is None:
+        return runs
+    owned = await get_conversation_store().run_ids_for_user(user.id)
+    return [r for r in runs if r.id in owned]
 
 
 @router.get("/{run_id}")

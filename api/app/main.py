@@ -64,6 +64,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from app.voice.router import router as voice_router
     except ImportError:  # f05 not merged yet
         voice_router = None
+    try:
+        from app.routes.conversations import router as conversations_router
+    except ImportError:
+        conversations_router = None
+    if conversations_router is not None:
+        app.include_router(conversations_router)
     if voice_router is not None:
         app.include_router(voice_router)
     return app
