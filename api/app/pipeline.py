@@ -139,6 +139,7 @@ async def _run_harness(
     apk_path: Path,
     art_dir: Path,
     job_ids: dict[str, str],
+    journey_steps: int | None = None,
 ) -> tuple[Run, HarnessResult]:
     if client is None:
         raise _Skip("Harness not configured (HARNESS_URL unset); runtime testing skipped.")
@@ -153,6 +154,7 @@ async def _run_harness(
                 package_name=run.app.package_name,
                 main_activity=run.app.main_activity,
                 profiles=run.profile_ids,
+                **({"journey_steps": min(journey_steps, 20)} if journey_steps else {}),
             ),
         )
         job_ids[run.id] = job.job_id
@@ -197,6 +199,7 @@ async def run_pipeline(
     data_dir: Path,
     harness_factory: HarnessFactory,
     job_ids: dict[str, str] | None = None,
+    journey_steps: int | None = None,
 ) -> None:
     job_ids = job_ids if job_ids is not None else {}
     client: HarnessLike | None = None
@@ -224,7 +227,8 @@ async def run_pipeline(
         try:
             client = harness_factory()
             run, result = await _run_harness(
-                client, storage, bus, run, apk_path, data_dir / "runs" / run_id / "artifacts", job_ids
+                client, storage, bus, run, apk_path, data_dir / "runs" / run_id / "artifacts", job_ids,
+                journey_steps,
             )
             collected.extend(runtime_findings(run_id, result, package=app_info.package_name))
             runtime_executed = True
