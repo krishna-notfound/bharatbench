@@ -1,0 +1,6 @@
+# HTTPS for the API via Let's Encrypt; sslip.io maps the hostname to the EC2 IP.
+# Change the hostname if the instance IP changes (attach an Elastic IP to avoid that).
+35-154-243-138.sslip.io {
+	encode gzip
+	reverse_proxy 127.0.0.1:8000
+}
