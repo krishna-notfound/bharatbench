@@ -68,14 +68,18 @@ class FakeRunService:
         self.runs = [make_run("run1")]
         self.findings = [make_finding("f1", 10.0), make_finding("f2", 40.0, "critical")]
         self.rerun_calls: list[tuple[str, list[ProfileId]]] = []
+        self.rerun_steps: list[int | None] = []
         self.cancel_calls: list[str] = []
         self.events: list[RunEvent] = []
 
     async def create_run(self, apk_path: str, apk_name: str, profile_ids: list[ProfileId]) -> Run:
         raise NotImplementedError
 
-    async def rerun(self, source_run_id: str, profile_ids: list[ProfileId]) -> Run:
+    async def rerun(
+        self, source_run_id: str, profile_ids: list[ProfileId], journey_steps: int | None = None
+    ) -> Run:
         self.rerun_calls.append((source_run_id, profile_ids))
+        self.rerun_steps.append(journey_steps)
         run = make_run("run2", "queued")
         self.runs.insert(0, run)
         return run
