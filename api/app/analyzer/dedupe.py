@@ -12,13 +12,34 @@ _SEV_ORDER: dict[Severity, int] = {"low": 0, "medium": 1, "high": 2, "critical":
 _DIGITS = re.compile(r"\d+")
 
 
+_ANR_COMP = re.compile(r"ANR in \S+(?: \(([^)]*)\))?")
+_ANR_REASON = re.compile(r"Reason:\s*(.+)")
+_EXC = re.compile(r"\b((?:[A-Za-z_]\w*\.)+[A-Z]\w*(?:Exception|Error))\b")
+_FRAME = re.compile(r"\bat\s+([\w.$<>]+)\(")
+
+
+def crash_signature(excerpt: str) -> str:
+    """Stable id of a crash/ANR excerpt: ignores timestamps, pids and durations so repeats collapse."""
+    anr = _ANR_COMP.search(excerpt)
+    if anr:
+        reason = _ANR_REASON.search(excerpt)
+        why = _DIGITS.sub("#", reason.group(1).strip())[:100] if reason else ""
+        return f"anr|{anr.group(1) or ''}|{why}"
+    exc = _EXC.search(excerpt)
+    if exc:
+        frame = _FRAME.search(excerpt)
+        return f"crash|{exc.group(1)}|{frame.group(1) if frame else ''}"
+    for line in excerpt.splitlines():
+        if line.strip():
+            return _DIGITS.sub("#", line.strip())[:160]
+    return ""
+
+
 def _signature(f: Finding) -> str:
-    """Crash signature for runtime findings: first non-empty logcat line, digits stripped."""
+    """Crash signature for runtime findings: from the first logcat excerpt."""
     for e in f.evidence:
         if e.kind == "logcat" and e.excerpt:
-            for line in e.excerpt.splitlines():
-                if line.strip():
-                    return _DIGITS.sub("#", line.strip())[:160]
+            return crash_signature(e.excerpt)
     return ""
 
 

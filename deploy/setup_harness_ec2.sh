@@ -8,6 +8,11 @@ REPO=~/bharatbench
 echo 'ubuntu ALL=(root) NOPASSWD: /usr/sbin/tc' | sudo tee /etc/sudoers.d/bharatbench-tc >/dev/null
 sudo chmod 440 /etc/sudoers.d/bharatbench-tc
 sudo visudo -cf /etc/sudoers.d/bharatbench-tc >/dev/null
+# 1a. NOPASSWD sudo for the one fixed tcpdump invocation (cleartext-traffic security check; capped by `timeout`)
+echo 'ubuntu ALL=(root) NOPASSWD: /usr/bin/timeout 240 /usr/bin/tcpdump -i any -nn -A -s 1024 -l tcp dst port 80' | sudo tee /etc/sudoers.d/bharatbench-tcpdump >/dev/null
+sudo chmod 440 /etc/sudoers.d/bharatbench-tcpdump
+sudo visudo -cf /etc/sudoers.d/bharatbench-tcpdump >/dev/null
+command -v tcpdump >/dev/null || sudo apt-get install -y tcpdump
 # 1b. tc kernel modules (not autoloaded under sudo on the AWS kernel: "Specified qdisc kind is unknown")
 printf '%s
 ' sch_netem sch_prio sch_ingress cls_u32 act_police act_gact | sudo tee /etc/modules-load.d/bharatbench-tc.conf >/dev/null

@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     tc_path: str = "/usr/sbin/tc"
     ip_path: str = "/usr/sbin/ip"
     sudo_path: str = "sudo"
+    tcpdump_path: str = "/usr/bin/tcpdump"
+    timeout_path: str = "/usr/bin/timeout"
+    security_enabled: bool = True
+    security_timeout_s: int = 150
     jobs_dir: Path = Path("./jobs")
     adb_path: str = "adb"
     maestro_path: str = "maestro"

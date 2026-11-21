@@ -163,6 +163,22 @@ class HarnessProfileResult(BaseModel):
     logcat: str | None = None  # artifact path
 
 
+class HarnessSecurityEvidence(BaseModel):
+    kind: Literal["logcat", "screenshot", "ui_dump", "manifest", "code", "metric", "note"]
+    ref: str | None = None  # artifact path relative to the job dir
+    excerpt: str | None = None  # secrets masked: first 4 + last 4 chars only
+
+
+class HarnessSecurityCheck(BaseModel):
+    id: str  # e.g. "sec.storage_secrets"
+    title: str
+    passed: bool = True
+    ran: bool = True  # False: the check could not run; `note` says why and no finding is produced
+    severity: Literal["critical", "high", "medium", "low"] = "low"
+    evidence: list[HarnessSecurityEvidence] = []
+    note: str | None = None
+
+
 class HarnessJob(BaseModel):
     job_id: str
     run_id: str
@@ -178,6 +194,7 @@ class HarnessResult(BaseModel):
     device: str
     android_version: str | None = None
     profiles: list[HarnessProfileResult]
+    security: list[HarnessSecurityCheck] = []
 
 
 # ---------- Service interface the voice agent (and routes) depend on ----------

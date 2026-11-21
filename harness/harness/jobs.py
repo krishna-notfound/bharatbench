@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 from collections.abc import Callable
@@ -10,8 +11,24 @@ from pathlib import Path
 from . import evidence
 from .adb import Adb
 from .crawler import Crawler, Sleep
-from .models import HarnessJob, HarnessJobRequest, HarnessProfileResult, HarnessResult, HarnessStep, ProfileId
+from .models import (
+    HarnessJob,
+    HarnessJobRequest,
+    HarnessProfileResult,
+    HarnessResult,
+    HarnessSecurityCheck,
+    HarnessStep,
+    ProfileId,
+)
 from .profiles import ProfileError, ProfileManager
+from .security import (
+    CleartextCapture,
+    DeviceAudit,
+    cleartext_check,
+    not_run,
+    parse_tcpdump,
+    scan_logcat_leaks,
+)
 from .settings import Settings
 
 log = logging.getLogger("harness.jobs")
@@ -42,6 +59,7 @@ class JobRunner:
         self._cancel: set[str] = set()
         self._active: str | None = None
         self._tasks: set[asyncio.Task[None]] = set()
+        self._cleartext: dict[str, tuple[list[tuple[str, str, str]] | None, str | None]] = {}
 
     # ---- health ----
     async def health(self, maestro_found: bool) -> dict[str, object]:
@@ -115,8 +133,9 @@ class JobRunner:
     async def _execute(self, job: HarnessJob, req: HarnessJobRequest) -> None:
         job.status = "running"
         profiles: list[HarnessProfileResult] = []
+        security: list[HarnessSecurityCheck] = []
         try:
-            await asyncio.wait_for(self._run(job, req, profiles), self.settings.job_timeout_s)
+            await asyncio.wait_for(self._run(job, req, profiles, security), self.settings.job_timeout_s)
             if job.job_id in self._cancel:
                 job.status = "cancelled"
             else:
@@ -131,18 +150,23 @@ class JobRunner:
             job.current_profile = None
             version = await self._android_version()
             result = HarnessResult(
-                job_id=job.job_id, device=self.settings.android_serial, android_version=version, profiles=profiles
-            )
+                job_id=job.job_id, device=self.settings.android_serial, android_version=version, profiles=profiles,
+                security=security,
+            )  # fmt: skip
             self.results[job.job_id] = result
             d = self.job_dir(job.job_id)
             (d / "result.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
+            self._cleartext.pop(job.job_id, None)
             self._active = None
 
     async def _uninstall(self, job: HarnessJob, package: str) -> None:
         rc, _, err = await self.adb.run(["uninstall", package], timeout=60)
         self._event(job, f"uninstalled {package}" if rc == 0 else f"uninstall failed: {err.strip()[:100]}")
 
-    async def _run(self, job: HarnessJob, req: HarnessJobRequest, out: list[HarnessProfileResult]) -> None:
+    async def _run(
+        self, job: HarnessJob, req: HarnessJobRequest, out: list[HarnessProfileResult],
+        security: list[HarnessSecurityCheck],
+    ) -> None:  # fmt: skip
         apk = self.job_dir(job.job_id) / "app.apk"
         rc, stdout, stderr = await self.adb.run(["install", "-r", "-g", str(apk)], timeout=180)
         if rc != 0 or "Success" not in stdout:
@@ -157,6 +181,8 @@ class JobRunner:
             out.append(await self._run_profile(job, req, pid))
             job.progress = (n + 1) / total
             self._event(job, f"profile {pid}: done")
+        if job.job_id not in self._cancel and out:
+            await self._security(job, req, security)
 
     async def _run_profile(self, job: HarnessJob, req: HarnessJobRequest, pid: ProfileId) -> HarnessProfileResult:
         res = HarnessProfileResult(profile_id=pid, applied=False, launched=False)
@@ -177,6 +203,10 @@ class JobRunner:
                 res.apply_note = f"could not apply: {exc}"
                 self._event(job, f"profile {pid}: {res.apply_note}")
                 return res
+            capture: CleartextCapture | None = None
+            if pid == "baseline" and cfg.security_enabled:
+                capture = CleartextCapture(cfg.sudo_path, cfg.tcpdump_path, cfg.timeout_path, d / "security" / "tcpdump.raw")
+                await capture.start()
             crawler = Crawler(
                 self.adb, pkg, req.main_activity, d, pid,
                 cancelled=lambda: job.job_id in self._cancel, sleep=self._sleep, clock=self._clock,
@@ -186,6 +216,8 @@ class JobRunner:
             except Exception as exc:  # noqa: BLE001 - a broken journey is evidence, not a job failure
                 j = crawler.j
                 self._event(job, f"profile {pid}: journey error: {exc}")
+            if capture is not None:
+                await self._finish_capture(job, capture)
             res.launched, res.launch_ms = j.launched, j.launch_ms
             res.screens, res.steps = j.screens, j.steps
             res.stuck_loading, res.state_lost_after_restore = j.stuck_loading, j.state_lost_after_restore
@@ -209,3 +241,47 @@ class JobRunner:
                 self._event(job, f"profile {pid}: REVERT FAILED: {exc}")
                 log.warning("revert failed for %s: %s", pid, exc)
 
+
+    # ---- dynamic security checks ----
+    async def _finish_capture(self, job: HarnessJob, capture: CleartextCapture) -> None:
+        text = await capture.stop()
+        if text is None:
+            self._cleartext[job.job_id] = (None, capture.error or "tcpdump did not start")
+            self._event(job, f"cleartext capture unavailable: {capture.error}")
+            return
+        _, ipout, _ = await self.adb.shell("ip", "-4", "-o", "addr", "show", "eth0", timeout=15)
+        m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)/", ipout)
+        self._cleartext[job.job_id] = (parse_tcpdump(text, m.group(1) if m else None), None)
+
+    async def _security(self, job: HarnessJob, req: HarnessJobRequest, out: list[HarnessSecurityCheck]) -> None:
+        if not self.settings.security_enabled:
+            return
+        self._event(job, "security checks: start")
+        d = self.job_dir(job.job_id)
+        audit = DeviceAudit(self.adb, req.package_name, d, d / "app.apk", self._sleep)
+        logs: dict[str, str] = {}
+        for p in sorted((d / "logcat").glob("*.txt")) if (d / "logcat").is_dir() else []:
+            logs[f"logcat/{p.name}"] = p.read_text("utf-8", "replace")
+        hits, why = self._cleartext.get(job.job_id, (None, "the baseline profile was not part of this run"))
+        steps = (
+            ("storage", audit.storage),
+            ("debuggable", audit.debuggable),
+            ("exported components", audit.exported),
+        )
+        out.append(scan_logcat_leaks(logs, req.package_name))
+        out.append(cleartext_check(hits, why))
+        try:
+            await asyncio.wait_for(self._device_checks(audit, steps, out), self.settings.security_timeout_s)
+        except TimeoutError:
+            out.append(not_run("sec.timeout", "Remaining security checks", "the security phase timed out"))
+        self._event(job, f"security checks: done ({sum(1 for c in out if c.ran and not c.passed)} failed)")
+
+    async def _device_checks(self, audit: DeviceAudit, steps: tuple, out: list[HarnessSecurityCheck]) -> None:  # type: ignore[type-arg]
+        for name, fn in steps:
+            try:
+                res = await fn()
+            except Exception as exc:  # noqa: BLE001 - one broken check must not drop the others
+                log.warning("security check %s failed: %s", name, exc)
+                out.append(not_run(f"sec.{name.replace(' ', '_')}", name, f"{type(exc).__name__}: {str(exc)[:120]}"))
+                continue
+            out.extend(res if isinstance(res, list) else [res])
