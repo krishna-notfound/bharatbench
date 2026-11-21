@@ -51,8 +51,8 @@ def create_app(settings: Settings | None = None, runner: Runner = subprocess_run
         if not 1 <= req.journey_steps <= 30:
             raise HTTPException(status_code=422, detail="journey_steps must be 1..30")
         health = await jobs.health(False)
-        if not health["emulator_booted"]:
-            raise HTTPException(status_code=503, detail="emulator not booted; run scripts/start_emulator.sh")
+        if not health["adb"]:
+            raise HTTPException(status_code=503, detail="adb is not available on the test lab host")
         try:
             job, job_dir = jobs.start(req)
         except Busy as exc:
@@ -80,7 +80,7 @@ def create_app(settings: Settings | None = None, runner: Runner = subprocess_run
     async def read_result(job_id: str) -> HarnessResult:
         job = get_job(job_id)
         result = jobs.results.get(job.job_id)
-        if job.status != "done" or result is None:
+        if job.status in ("queued", "running") or result is None:
             raise HTTPException(status_code=409, detail=f"job is {job.status}")
         return result
 
@@ -99,6 +99,14 @@ def create_app(settings: Settings | None = None, runner: Runner = subprocess_run
         job = jobs.cancel(job_id)
         assert job is not None
         return job
+
+    @app.delete("/jobs/{job_id}")
+    async def delete_job(job_id: str) -> dict[str, object]:
+        if not JOB_ID.fullmatch(job_id):
+            raise HTTPException(status_code=404, detail="job not found")
+        if not jobs.delete(job_id):
+            raise HTTPException(status_code=409, detail="job is still running")
+        return {"deleted": True, "job_id": job_id}
 
     return app
 

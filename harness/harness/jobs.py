@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+import shutil
 import time
 import uuid
 from collections.abc import Callable
@@ -11,6 +12,7 @@ from pathlib import Path
 from . import evidence
 from .adb import Adb
 from .crawler import Crawler, Sleep
+from .heal import DeviceDoctor
 from .models import (
     HarnessJob,
     HarnessJobRequest,
@@ -49,6 +51,7 @@ class JobRunner:
         adb: Adb,
         sleep: Sleep = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
+        disk_probe: Callable[[Path], float] | None = None,
     ) -> None:
         self.settings = settings
         self.adb = adb
@@ -59,10 +62,14 @@ class JobRunner:
         self._cancel: set[str] = set()
         self._active: str | None = None
         self._tasks: set[asyncio.Task[None]] = set()
+        self.doctor = DeviceDoctor(settings, adb, sleep, clock, disk_probe)
         self._cleartext: dict[str, tuple[list[tuple[str, str, str]] | None, str | None]] = {}
 
     # ---- health ----
     async def health(self, maestro_found: bool) -> dict[str, object]:
+        if not self.busy and self.doctor.host_free_mb() < self.settings.min_free_mb:
+            # idle and short on disk: free old job folders now so the API's disk guard can recover on its own
+            self.doctor.purge_jobs(set())
         rc, _, _ = await self.adb.global_run(["version"])
         adb_ok = rc == 0
         devices: list[str] = []
@@ -79,6 +86,7 @@ class JobRunner:
                 if booted:
                     version = await self._android_version()
         return {
+            **self.doctor.snapshot(adb_ok, booted),
             "adb": adb_ok,
             "devices": devices,
             "emulator_booted": booted,
@@ -125,6 +133,19 @@ class JobRunner:
             self._event(job, "cancel requested")
         return job
 
+    def delete(self, job_id: str) -> bool:
+        """Remove a finished job's artifacts and bookkeeping. False if it is still active."""
+        job = self.jobs.get(job_id)
+        if job is None:
+            return True
+        if job.status in ("queued", "running") or job_id == self._active:
+            return False
+        shutil.rmtree(self.job_dir(job_id), ignore_errors=True)
+        self.jobs.pop(job_id, None)
+        self.results.pop(job_id, None)
+        self._cancel.discard(job_id)
+        return True
+
     def _event(self, job: HarnessJob, msg: str) -> None:
         job.events.append(msg)
         log.info("[%s] %s", job.job_id[:8], msg)
@@ -161,6 +182,8 @@ class JobRunner:
 
     async def _uninstall(self, job: HarnessJob, package: str) -> None:
         rc, _, err = await self.adb.run(["uninstall", package], timeout=60)
+        if rc == 0:
+            self.doctor.installed.discard(package)
         self._event(job, f"uninstalled {package}" if rc == 0 else f"uninstall failed: {err.strip()[:100]}")
 
     async def _run(
@@ -168,9 +191,17 @@ class JobRunner:
         security: list[HarnessSecurityCheck],
     ) -> None:  # fmt: skip
         apk = self.job_dir(job.job_id) / "app.apk"
+        ready = await self.doctor.ensure_ready(
+            lambda m: self._event(job, m), protect_jobs={job.job_id}, keep_pkgs={req.package_name}
+        )
+        if not ready:
+            raise RuntimeError(
+                "The test phone is not responding and could not be restarted automatically. Try again in a minute."
+            )
         rc, stdout, stderr = await self.adb.run(["install", "-r", "-g", str(apk)], timeout=180)
         if rc != 0 or "Success" not in stdout:
             raise RuntimeError(f"adb install failed: {(stderr or stdout).strip()[:200]}")
+        self.doctor.installed.add(req.package_name)
         self._event(job, f"installed {req.package_name}")
         total = len(req.profiles)
         for n, pid in enumerate(req.profiles):
@@ -178,11 +209,44 @@ class JobRunner:
                 break
             job.current_profile = pid
             self._event(job, f"profile {pid}: start")
-            out.append(await self._run_profile(job, req, pid))
+            out.append(await self._profile_with_recovery(job, req, pid))
             job.progress = (n + 1) / total
             self._event(job, f"profile {pid}: done")
         if job.job_id not in self._cancel and out:
             await self._security(job, req, security)
+
+    async def _profile_with_recovery(self, job: HarnessJob, req: HarnessJobRequest, pid: ProfileId) -> HarnessProfileResult:
+        """Run one profile; if the phone drops off adb or a step hangs, reconnect and retry once, else report honestly."""
+        problem = "unknown"
+        for attempt in (1, 2):
+            if not await self.doctor.adb_alive():
+                self._event(job, f"DEVICE: phone offline before profile {pid}; reconnecting")
+                if not await self.doctor.reconnect():
+                    problem = "the phone is offline and did not reconnect"
+                    break
+            try:
+                res = await asyncio.wait_for(self._run_profile(job, req, pid), self.settings.profile_timeout_s)
+            except TimeoutError:
+                problem = f"a step hung for over {self.settings.profile_timeout_s}s"
+            except Exception as exc:  # noqa: BLE001 - classify below
+                if await self.doctor.adb_alive():
+                    self._event(job, f"profile {pid}: error: {exc}")
+                    return HarnessProfileResult(
+                        profile_id=pid, applied=False, launched=False, apply_note=f"profile errored: {str(exc)[:150]}"
+                    )
+                problem = f"{type(exc).__name__}: {str(exc)[:80]}"
+            else:
+                if await self.doctor.adb_alive():
+                    return res
+                problem = "the phone went offline during the test"
+            self._event(job, f"DEVICE: {problem} (profile {pid}, attempt {attempt})")
+            if attempt == 1 and await self.doctor.reconnect():
+                self._event(job, f"DEVICE: reconnected; retrying profile {pid} once")
+                continue
+            break
+        note = f"The test phone stopped responding ({problem}); this condition was not tested."
+        self._event(job, f"DEVICE: profile {pid} skipped: {problem}")
+        return HarnessProfileResult(profile_id=pid, applied=False, launched=False, apply_note=note)
 
     async def _run_profile(self, job: HarnessJob, req: HarnessJobRequest, pid: ProfileId) -> HarnessProfileResult:
         res = HarnessProfileResult(profile_id=pid, applied=False, launched=False)

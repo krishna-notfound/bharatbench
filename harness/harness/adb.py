@@ -52,6 +52,11 @@ class Adb:
     async def shell(self, *args: str, timeout: float = 30) -> tuple[int, str, str]:
         return await self.run(["shell", *args], timeout)
 
+    async def raw(self, argv: list[str], timeout: float = 30) -> tuple[int, str, str]:
+        """Any host command (e.g. docker) through the same injectable runner."""
+        rc, out, err = await self._runner(argv, timeout)
+        return rc, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
+
     async def global_run(self, args: list[str], timeout: float = 15) -> tuple[int, str, str]:
         """adb command without -s (e.g. `adb devices`)."""
         rc, out, err = await self._runner([self.adb_path, *args], timeout)

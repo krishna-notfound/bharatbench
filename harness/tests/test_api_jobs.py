@@ -57,6 +57,7 @@ def test_auth_on_every_route(tmp_path):
         ("get", "/jobs/" + "a" * 32 + "/result"),
         ("get", "/jobs/" + "a" * 32 + "/artifacts/x"),
         ("post", "/jobs/" + "a" * 32 + "/cancel"),
+        ("delete", "/jobs/" + "a" * 32),
     ]:
         assert getattr(c, method)(path).status_code == 401, path
         assert getattr(c, method)(path, headers={"X-Harness-Token": "wrong"}).status_code == 401, path
@@ -79,12 +80,12 @@ def test_health_adb_missing(tmp_path):
     assert body["adb"] is False and body["devices"] == [] and body["emulator_booted"] is False
 
 
-def test_post_job_503_when_not_booted(tmp_path):
+def test_post_job_503_when_adb_missing(tmp_path):
     dev = device()
-    dev.booted = False
+    dev.fail["version"] = 127
     c = make_client(tmp_path, dev)
     r = c.post("/jobs", headers=H, files={"apk": ("a.apk", b"x")}, data={"request": request_json(["baseline"])})
-    assert r.status_code == 503 and "emulator not booted" in r.json()["detail"]
+    assert r.status_code == 503 and "adb" in r.json()["detail"]
 
 
 def test_post_job_validation(tmp_path):

@@ -45,6 +45,8 @@ Must describe the **actual** state of the repo.
 - 2026-11-21 — One emulator, one job at a time — hackathon scope.
 - 2026-11-21 — Supabase storage via PostgREST + httpx (no new dependency), models stored as JSON in `data`, selected by `STORAGE_BACKEND` — SQLite stays default; APK files still local.
 
+- 2026-11-22 — f18 reliability: API watchdog (4 min no progress / 15 min cap -> run ends `done`, runtime skipped with a human reason, partial profiles kept), startup recovery + 25 min stuck-run sweeper (`failed` with reason), harness health gate with self-repair (`harness/heal.py`: adb reconnect, `docker restart redroid`, purge old jobs, leftover app uninstall), per-profile reconnect+retry, `DELETE /jobs/{id}` after download, `/health` device_status/last_repair/disk_free_mb, API skips runtime when disk_free_mb < 400.
+
 ## Deferred Work
 
 - GitHub repo → APK build — after demo; needs isolated build VM.

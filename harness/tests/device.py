@@ -64,6 +64,8 @@ class FakeDevice:
         if s.startswith("install"):
             self.installed = True
             return 0, b"Performing Streamed Install\nSuccess\n", b""
+        if s == "get-state":
+            return 0, b"device\n", b""
         if "getprop sys.boot_completed" in s:
             return 0, b"1\n" if self.booted else b"\n", b""
         if "getprop ro.build.version.release" in s:
