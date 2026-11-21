@@ -1,6 +1,6 @@
 # BharatBench — Claude Code Instructions
 
-> The Cheap Phone Test: upload an Android APK, BharatBench runs it on a constrained Android emulator
+> The Real Phone Test: upload an Android APK, BharatBench runs it on a constrained Android emulator
 > (2 GB RAM, slow/flaky network, low storage, battery saver, process death), scans it for security
 > and performance issues, ranks findings by real-world user impact, and explains them by voice.
 

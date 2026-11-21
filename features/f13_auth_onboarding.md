@@ -14,7 +14,7 @@ real action (upload an APK or talk to the agent). Honest about what the lab simu
 
 ## Behavior
 - `/login`: Oryn-like (reference: live https://oryn.app.builtbykrishna.dev and `D:\Project\ganai-ai-project\dost-ai\apps\web` login
-  components — read-only, never read `.env*`/`*.pem`): orb (xl, idle) with ring, "Your cheap-phone test lab" headline, one-line
+  components — read-only, never read `.env*`/`*.pem`): orb (xl, idle) with ring, "Your real-phone test lab" headline, one-line
   subcopy, status pill, **Continue with Google** (white, Google "G" mark as inline SVG), **Continue as guest** (soft lavender),
   privacy note. Full-height centered, perfect at 360–430 px phones and desktop. Errors in plain language (e.g. Google not configured
   → "Google sign-in isn't set up yet — continue as guest"). `?next=` honoured after sign-in.

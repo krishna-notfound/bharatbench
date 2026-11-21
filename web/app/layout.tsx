@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BharatBench — The Cheap Phone Test",
+  title: "BharatBench — The Real Phone Test",
   description:
     "Test your Android app where your users actually are: constrained RAM, flaky networks, low storage.",
 };

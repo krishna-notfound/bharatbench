@@ -45,8 +45,8 @@ export function WelcomeHero() {
         Hi, I&apos;m BharatBench
       </h1>
       <p className="mt-4 max-w-md text-base text-muted-foreground md:text-lg">
-        I try your Android app on a cheap phone, the kind your users really
-        carry, and tell you what breaks and who it hurts.
+        I run your Android app on the everyday phones your users really
+        carry, and tell you what breaks and who it affects.
       </p>
       <StatusPill />
       <div className="mt-8 flex w-full flex-col items-center gap-3 sm:w-auto sm:flex-row">

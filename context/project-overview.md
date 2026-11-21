@@ -2,13 +2,13 @@
 
 ## Overview
 
-BharatBench is a web platform that tests Android apps where Indian users actually are: cheap 2 GB
+BharatBench is a web platform that tests Android apps where Indian users actually are: everyday 2 GB
 phones, slow and dropping mobile networks, nearly full storage, battery saver, and apps killed in the
 background. A developer uploads an APK; BharatBench scans it for security and performance problems,
 runs it on a real Android emulator under constrained profiles, collects evidence (screenshots, UI
 dumps, logcat, timings), ranks every finding by estimated user impact, and produces reproducible
 Maestro flows. A voice agent (Hindi / English / Hinglish) can start tests, report progress and explain
-findings. Tagline: **"The Cheap Phone Test — test your app where your users actually are."**
+findings. Tagline: **"The Real Phone Test — test your app where your users actually are."** Copy rule (2026-11-21, user): never use the word "cheap" in product copy — say "everyday phones" / "the phones your users really carry"; "Budget Android" is fine as a profile name.
 
 ## Goals
 
@@ -47,7 +47,7 @@ findings. Tagline: **"The Cheap Phone Test — test your app where your users ac
 - Security: debuggable, allowBackup, cleartext traffic, exported components without permission, dangerous permissions, hardcoded secrets/keys, http URLs, WebView JS bridges.
 - Performance/size: APK size, dex count, native ABIs bundled, min/target SDK, missing shrinking/obfuscation.
 
-### Cheap-phone runtime testing (f04)
+### Real-phone runtime testing (f04)
 - Profiles in `api/app/profiles.py`; launch timing, automated crawl journey, crash/ANR detection, network error detection, stuck-loading detection, state loss after process death, memory PSS.
 
 ### Impact ranking and repro (f02)
