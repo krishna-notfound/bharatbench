@@ -1,0 +1,19 @@
+[Unit]
+Description=BharatBench harness (FastAPI, localhost only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bharatbench/harness
+EnvironmentFile=/home/ubuntu/bharatbench/harness/.env
+Environment=PATH=/home/ubuntu/android-sdk/platform-tools:/home/ubuntu/.maestro/bin:/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/ubuntu/.local/bin/uv run uvicorn harness.main:app --host 127.0.0.1 --port 8100
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

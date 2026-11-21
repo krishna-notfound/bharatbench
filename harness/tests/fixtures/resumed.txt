@@ -1,0 +1,1 @@
+  mResumedActivity: ActivityRecord{1a2b3c u0 com.example.shop/.MainActivity t12}

@@ -1,0 +1,9 @@
+UI hierarchy dumped to: /sdcard/ui.xml<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.example.shop" content-desc="" clickable="false" bounds="[0,0][1080,2280]">
+    <node index="0" text="Log out" resource-id="com.example.shop:id/logout" class="android.widget.Button" package="com.example.shop" content-desc="" clickable="true" bounds="[0,0][200,100]" />
+    <node index="1" text="Products" resource-id="com.example.shop:id/products" class="android.widget.TextView" package="com.example.shop" content-desc="" clickable="true" bounds="[100,200][500,300]" />
+    <node index="2" text="" resource-id="com.example.shop:id/cart" class="android.widget.ImageButton" package="com.example.shop" content-desc="Cart" clickable="true" bounds="[900,100][1000,200]" />
+    <node index="3" text="Welcome" resource-id="" class="android.widget.TextView" package="com.example.shop" content-desc="" clickable="false" bounds="[0,400][1080,500]" />
+  </node>
+</hierarchy>
