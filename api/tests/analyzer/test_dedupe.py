@@ -49,3 +49,19 @@ def test_baseline_comparison_suffix():
     assert "Not observed on the baseline" in by_rule[("rt.crash", "budget_2gb")].description
     assert "Baseline comparison" not in by_rule[("rt.slow_launch", "baseline")].description
     assert "Baseline comparison" not in dedupe_findings([_rt(1)], baseline_ran=False)[0].description
+
+
+def test_anrs_with_different_signatures_merge_per_profile():
+    from app.analyzer.dedupe import dedupe_findings
+    from app.models import Evidence, Finding
+
+    def anr(n: int, profile: str) -> Finding:
+        return Finding(
+            id=f"a{n}", run_id="r", source="runtime", category="reliability", rule_id="rt.anr",
+            title="App not responding (ANR) on Baseline", severity="critical", description="ANR",
+            profile_id=profile,
+            evidence=[Evidence(kind="logcat", excerpt=f"ANR in org.x (org.x/.Act{n})\nReason: Input dispatching timed out {n}")],
+        )
+
+    out = dedupe_findings([anr(1, "baseline"), anr(2, "baseline"), anr(3, "budget_2gb")])
+    assert [f.profile_id for f in out] == ["baseline", "budget_2gb"]

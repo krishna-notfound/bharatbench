@@ -43,9 +43,15 @@ def _signature(f: Finding) -> str:
     return ""
 
 
+# Titles of these rules carry no per-signature detail, so separate findings would look identical to users.
+_ONE_PER_PROFILE = {"rt.anr"}
+
+
 def _key(f: Finding) -> tuple[str, ...]:
     if f.source == "static":
         return ("static", f.rule_id)
+    if f.rule_id in _ONE_PER_PROFILE:
+        return ("runtime", f.rule_id, f.profile_id or "")
     return ("runtime", f.rule_id, f.profile_id or "", _signature(f))
 
 
