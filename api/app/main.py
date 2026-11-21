@@ -66,6 +66,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         voice_router = None
     if voice_router is not None:
         app.include_router(voice_router)
+    try:
+        from app.realtime.router import router as realtime_router
+    except ImportError:  # f09 realtime engine not present
+        realtime_router = None
+    if realtime_router is not None:
+        app.include_router(realtime_router)
     return app
 
 
