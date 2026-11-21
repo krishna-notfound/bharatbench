@@ -87,6 +87,12 @@
   --orb-b: #f0abfc;
   --orb-c: #a5b4fc;
   --orb-glow: rgba(124, 92, 255, 0.28);
+  --orb-hi: #f4f0ff;
+  --orb-lo: #9b84e6;
+  --orb-deep: #8065d6;
+  --orb-ink: #2a2150;
+  --orb-ring: #c4ef67;
+  --orb-ring-glow: rgba(196, 239, 103, 0.4);
   --chart-1: #7c5cff;
   --chart-2: #5b8def;
   --chart-3: #16a34a;
