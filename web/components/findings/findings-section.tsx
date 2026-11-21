@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState } from "@/components/shell/states";
 import { SeverityBadge } from "@/components/findings/severity-badge";
 import { FindingSheet } from "@/components/findings/finding-sheet";
-import { findingSourceLabel, impactSentence } from "@/components/findings/finding-text";
+import { findingSourceLabel, findingTitle, impactSentence } from "@/components/findings/finding-text";
 import type { Finding } from "@/lib/types";
 
 const CARD =
@@ -67,7 +67,7 @@ export function FindingsSection({
             <button
               type="button"
               onClick={() => setOpenId(f.id)}
-              aria-label={`Open issue: ${f.title}`}
+              aria-label={`Open issue: ${findingTitle(f)}`}
               className={`${CARD} group flex w-full items-start gap-4 p-5 text-left transition-all outline-none hover:border-primary/40 hover:shadow-[0_12px_32px_rgba(124,92,255,0.14)] focus-visible:ring-3 focus-visible:ring-ring/50`}
             >
               <div className="min-w-0 flex-1 space-y-2">
@@ -80,7 +80,7 @@ export function FindingsSection({
                   )}
                   <span className="text-xs text-muted-foreground">{findingSourceLabel(f)}</span>
                 </div>
-                <h3 className="text-base leading-snug font-semibold">{f.title}</h3>
+                <h3 className="text-base leading-snug font-semibold">{findingTitle(f)}</h3>
                 <p className="line-clamp-2 text-sm text-muted-foreground">{impactSentence(f)}</p>
               </div>
               <ChevronRight className="mt-1 size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />

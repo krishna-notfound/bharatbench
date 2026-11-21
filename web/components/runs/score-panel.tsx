@@ -11,6 +11,17 @@ function scoreTone(score: number): { text: string; stroke: string } {
 const R = 44;
 const C = 2 * Math.PI * R;
 
+/** Drop internal hosts/URLs and library boilerplate from a harness error before showing it. */
+function friendlyReason(raw: string): string {
+  const cleaned = raw
+    .replace(/For more information check:?\s*\S+/gi, "")
+    .replace(/\s*for url\s+'?https?:\/\/\S+/gi, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length > 160 ? `${cleaned.slice(0, 157)}…` : cleaned;
+}
+
 /** Reliability score ring. Renders only when the API has produced a summary. */
 export function ScorePanel({ run }: { run: Run }) {
   const s = run.summary;
@@ -53,7 +64,7 @@ export function ScorePanel({ run }: { run: Run }) {
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-sev-medium" />
             <span>
               I skipped the emulator test, so this is an APK scan only.
-              {s.runtime_skipped_reason ? ` ${s.runtime_skipped_reason}` : ""}
+              {s.runtime_skipped_reason ? ` ${friendlyReason(s.runtime_skipped_reason)}` : ""}
             </span>
           </p>
         )}
