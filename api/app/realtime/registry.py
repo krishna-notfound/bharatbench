@@ -20,6 +20,7 @@ LABELS = {
     "list_findings": "Reading findings",
     "explain_finding": "Reading finding details",
     "cancel_run": "Cancelling the test",
+    "get_report": "Reading the report",
 }
 
 TOOL_SCHEMAS = voice_tools.TOOL_SCHEMAS

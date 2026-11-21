@@ -154,6 +154,10 @@ def sarvam() -> Iterator[respx.MockRouter]:
 def _client(monkeypatch: pytest.MonkeyPatch, service: FakeService, **settings: Any) -> TestClient:
     monkeypatch.setattr(rt_router, "resolve_service", lambda: service)
     app = FastAPI()
+    settings.setdefault(
+        "sarvam_stream_stt", False
+    )  # REST paths mocked by respx; WS/stream tested in test_stt_tts.py
+    settings.setdefault("sarvam_stream_tts", False)
     app.state.settings = Settings(_env_file=None, sarvam_api_key="sk_test", **settings)  # type: ignore[call-arg]
     app.include_router(rt_router.router)
     return TestClient(app)
@@ -318,15 +322,24 @@ def test_voice_turn_from_audio(monkeypatch: pytest.MonkeyPatch, sarvam: respx.Mo
     assert any(e["type"] == "<audio-frame>" for e in events)
 
 
-def test_job_updates_pushed_and_idle_narration(
+def test_job_updates_pushed_and_finished_job_starts_llm_turn(
     monkeypatch: pytest.MonkeyPatch, sarvam: respx.MockRouter
 ) -> None:
-    sarvam.post(f"{SARVAM}/v1/chat/completions").mock(
-        side_effect=_llm_handler("start_test", {"profiles": ["baseline"]})
-    )
-    service = FakeService(delay=0.6)  # job events arrive after the turn has finished -> idle narration
+    base = _llm_handler("start_test", {"profiles": ["baseline"]})
+    seen_notes: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        msgs = json.loads(request.content)["messages"]
+        notes = [m["content"] for m in msgs if m["role"] == "system" and "just finished" in m["content"]]
+        if notes:
+            seen_notes.append(notes[-1])
+            return _text("Your test finished. ", "The score is low, want me to explain?")
+        return base(request)
+
+    sarvam.post(f"{SARVAM}/v1/chat/completions").mock(side_effect=handler)
+    service = FakeService(delay=0.6)  # job events arrive after the turn has finished -> idle
     with _client(monkeypatch, service).websocket_connect("/ws/realtime") as ws:
-        _start(ws)
+        _start(ws, "text")
         ws.send_json({"v": 2, "type": "user.text", "text": "start a test"})
         first = _until(ws, "turn.completed")
         assert any(e["type"] == "tool.finished" and e["ok"] for e in first)
@@ -334,11 +347,14 @@ def test_job_updates_pushed_and_idle_narration(
         assert (
             running["run_id"] == "run2" and running["status"] == "running" and running["progress"] is not None
         )
-        narration = _until(ws, "turn.completed")[-1]
-        assert narration["text"] == "The test is now running."
+        assert _until(ws, "turn.completed")[-1]["text"] == "The test is now running."
         done = _until(ws, "job.update")[-1]
         assert done["status"] == "done"
-        assert _until(ws, "turn.completed")[-1]["text"].startswith("Test complete")
+        # done -> an LLM turn (not a scripted line) that is told to read the result
+        final = _until(ws, "turn.completed")[-1]
+        assert final["text"].startswith("Your test finished")
+    assert seen_notes and "run2" in seen_notes[0]
+    assert "get_run_status" in seen_notes[0] or "get_report" in seen_notes[0]
 
 
 def test_auth_required_rejects_missing_token(

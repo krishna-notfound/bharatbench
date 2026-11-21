@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import re
 import wave
 from collections.abc import AsyncIterator
@@ -17,18 +18,13 @@ from typing import Any
 
 import httpx
 
+from app.realtime.base import ProviderError
 from app.voice import sarvam_stt
 from app.voice.config import SARVAM_BASE_URL, TTS_SAMPLE_RATE, tts_model, tts_speaker
 
+log = logging.getLogger(__name__)
 TTS_TIMEOUT = 30.0
 _DEVANAGARI = re.compile(r"[ऀ-ॿ]")
-
-
-class ProviderError(RuntimeError):
-    def __init__(self, provider: str, message: str, *, retryable: bool = False) -> None:
-        super().__init__(f"{provider}: {message}")
-        self.provider = provider
-        self.retryable = retryable
 
 
 # ------------------------------------------------------------------ STT
@@ -169,7 +165,10 @@ class StreamingLLM:
         self._key = api_key
 
     async def stream(
-        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        tool_choice: str = "auto",
     ) -> AsyncIterator[LLMChunk]:
         body: dict[str, Any] = {
             "model": self._model,
@@ -179,7 +178,9 @@ class StreamingLLM:
         }
         if tools:
             body["tools"] = tools
-            body["tool_choice"] = "auto"
+            body["tool_choice"] = (
+                tool_choice  # "none" on the last round: history holds tool calls, so tools stay declared
+            )
         if self._model == "sarvam-105b":
             body["reasoning_effort"] = None  # reasoning off for low latency
         headers = {"api-subscription-key": self._key, "Authorization": f"Bearer {self._key}"}
@@ -190,7 +191,8 @@ class StreamingLLM:
                 "POST", self._url, headers=headers, json=body, timeout=httpx.Timeout(60.0, read=60.0)
             ) as resp:
                 if resp.status_code != 200:
-                    await resp.aread()
+                    detail = (await resp.aread())[:500].decode("utf-8", "replace")
+                    log.warning("llm HTTP %s: %s", resp.status_code, detail)
                     raise ProviderError("llm", f"HTTP {resp.status_code}", retryable=resp.status_code >= 500)
                 async for line in resp.aiter_lines():
                     if not line.startswith("data:"):

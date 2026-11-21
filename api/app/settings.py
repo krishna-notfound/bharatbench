@@ -17,6 +17,16 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.sarvam.ai/v1"
     llm_model: str = "sarvam-105b"
     llm_api_key: str | None = None  # falls back to sarvam_api_key
+    # f15 realtime providers. Sarvam streaming is primary; REST is the fallback.
+    sarvam_stream_stt: bool = True
+    sarvam_stream_tts: bool = True
+    endpoint_grace_ms: int = 180  # speculative turn audio gate (Oryn ENDPOINT_GRACE_MS)
+    contest_timeout_s: float = 3.0
+    # Gnani Prisma STT is implemented but inert unless GNANI_API_KEY is set. (Timbre TTS: not used.)
+    gnani_api_key: str | None = None
+    gnani_stt_ws_url: str = "wss://api.vachana.ai/stt/v3/stream"
+    gnani_stt_model: str = "prisma-v3.0"
+    gnani_stt_format: str = "codemix"
     auth_required: bool = False
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
