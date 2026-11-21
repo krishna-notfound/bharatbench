@@ -1,24 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FlaskConical } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { buttonVariants } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Orb, orbStateFromRun } from "@/components/orb/orb";
 import { EmptyState, ErrorState } from "@/components/shell/states";
 import { useFetch } from "@/components/shell/use-fetch";
-import { StatusBadge } from "@/components/runs/status-badge";
+import { CARD, CARD_HOVER, PRIMARY_CTA } from "@/components/shell/surface";
+import { sessionLine, runTitle } from "@/components/runs/session-summary";
 import { listRuns } from "@/lib/api";
-import { relativeTime, runTitle } from "@/lib/format";
+import { STATUS_LABEL, relativeTime } from "@/lib/format";
 import { TERMINAL_STATUSES, type Run } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 const POLL_MS = 5000;
 
@@ -30,14 +23,13 @@ function pollWhileActive(runs: Run[] | null): number | null {
 }
 
 export function RunsList() {
-  const router = useRouter();
   const { data, error, loading, reload } = useFetch(listRuns, pollWhileActive);
 
   if (loading) {
     return (
-      <div className="space-y-2">
-        {[0, 1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+      <div className="space-y-3">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-24 w-full rounded-3xl" />
         ))}
       </div>
     );
@@ -45,9 +37,10 @@ export function RunsList() {
   if (error && !data) {
     return (
       <ErrorState
-        title="Could not load runs"
-        message={error}
+        title="I can't reach my test lab"
+        message="Your sessions will show up here as soon as I'm back online."
         onRetry={reload}
+        className="rounded-3xl"
       />
     );
   }
@@ -55,11 +48,12 @@ export function RunsList() {
     return (
       <EmptyState
         icon={<FlaskConical className="size-6" />}
-        title="No runs yet"
-        message="Upload an APK to run your first Cheap Phone Test."
+        title="No sessions yet"
+        message="Upload an APK and I'll run your first test."
+        className="rounded-3xl"
         action={
-          <Link href="/" className={buttonVariants({ size: "lg" })}>
-            Run a test
+          <Link href="/new" className={PRIMARY_CTA}>
+            Test my app
           </Link>
         }
       />
@@ -67,68 +61,54 @@ export function RunsList() {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {error && (
-        <p role="alert" className="text-xs text-destructive">
-          Refresh failed: {error}. Showing last known data.
+        <p role="alert" className="px-1 text-xs text-muted-foreground">
+          I couldn&apos;t refresh just now. Showing what I had before.
         </p>
       )}
-      <div className="overflow-x-auto rounded-xl border border-border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>App</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Profiles</TableHead>
-              <TableHead className="text-right">Critical</TableHead>
-              <TableHead className="text-right">High</TableHead>
-              <TableHead className="text-right">Score</TableHead>
-              <TableHead className="text-right">Created</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.map((r) => (
-              <TableRow
-                key={r.id}
-                className="cursor-pointer"
-                onClick={() => router.push(`/runs/${r.id}`)}
-              >
-                <TableCell className="max-w-64">
-                  <Link
-                    href={`/runs/${r.id}`}
-                    className="block truncate font-medium outline-none hover:text-primary focus-visible:text-primary"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {runTitle(r)}
-                  </Link>
-                  <span className="block truncate font-mono text-xs text-muted-foreground">
-                    {r.app?.package_name ?? r.apk_name}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={r.status} />
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {r.profile_ids.length}
-                  <span className="sr-only"> profiles</span>
-                </TableCell>
-                <TableCell className="text-right font-mono tabular-nums">
-                  {r.summary ? r.summary.counts.critical : "—"}
-                </TableCell>
-                <TableCell className="text-right font-mono tabular-nums">
-                  {r.summary ? r.summary.counts.high : "—"}
-                </TableCell>
-                <TableCell className="text-right font-mono tabular-nums">
-                  {r.summary ? Math.round(r.summary.reliability_score) : "—"}
-                </TableCell>
-                <TableCell className="whitespace-nowrap text-right text-muted-foreground">
-                  {relativeTime(r.created_at)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      <ul className="space-y-3">
+        {data.map((r) => (
+          <li key={r.id}>
+            <Link
+              href={`/runs/${r.id}`}
+              className={cn(
+                CARD,
+                CARD_HOVER,
+                "flex items-center gap-4 p-4 outline-none focus-visible:ring-2 focus-visible:ring-primary md:p-5",
+              )}
+            >
+              <Orb
+                state={orbStateFromRun(r.status)}
+                size="sm"
+                className="shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{runTitle(r)}</p>
+                <p className="truncate text-sm text-muted-foreground">
+                  {sessionLine(r)}
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {STATUS_LABEL[r.status]} · {relativeTime(r.created_at)}
+                </p>
+              </div>
+              {r.summary && r.summary.total_findings > 0 && (
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full px-3 py-1 text-sm font-medium tabular-nums",
+                    r.summary.counts.critical > 0
+                      ? "bg-sev-critical/10 text-sev-critical"
+                      : "bg-accent text-accent-foreground",
+                  )}
+                  aria-label={`${r.summary.total_findings} issues`}
+                >
+                  {r.summary.total_findings}
+                </span>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
