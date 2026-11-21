@@ -1,11 +1,13 @@
-secrets/
-data/
-api/
-harness/
-.claude/
-.playwright-mcp/
-context.zip
+# Anchored to repo root (a bare "supabase/" also matched web/lib/supabase and broke the build).
+/secrets/
+/data/
+/api/
+/harness/
+/supabase/
+/deploy/
+/.claude/
+/.playwright-mcp/
+/context.zip
 *.pem
 .env
 **/.env
-supabase/
