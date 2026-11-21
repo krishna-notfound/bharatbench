@@ -1,5 +1,6 @@
 """Single settings object for the API, read from env / api/.env."""
 
+from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,3 +22,8 @@ class Settings(BaseSettings):
     @property
     def harness_configured(self) -> bool:
         return bool(self.harness_url)
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

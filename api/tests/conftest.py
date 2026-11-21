@@ -56,7 +56,7 @@ def fake_analyzer(monkeypatch: pytest.MonkeyPatch):
             make_finding("s2", run_id, severity="critical", rule_id="sec.crit"),
         ]
 
-    def runtime_findings(run_id: str, result: HarnessResult):
+    def runtime_findings(run_id: str, result: HarnessResult, package: str = "pkg"):
         return [
             make_finding(
                 "rt1", run_id, source="runtime", category="reliability", severity="high",

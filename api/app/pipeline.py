@@ -225,7 +225,7 @@ async def run_pipeline(
             run, result = await _run_harness(
                 client, storage, bus, run, apk_path, data_dir / "runs" / run_id / "artifacts", job_ids
             )
-            await _store_findings(storage, bus, run_id, list(runtime_findings(run_id, result)))
+            await _store_findings(storage, bus, run_id, list(runtime_findings(run_id, result, package=app_info.package_name)))
             runtime_executed = True
         except _Skip as skip:
             skipped_reason = str(skip)
