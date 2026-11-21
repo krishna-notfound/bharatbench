@@ -1,0 +1,11 @@
+secrets/
+data/
+api/
+harness/
+.claude/
+.playwright-mcp/
+context.zip
+*.pem
+.env
+**/.env
+supabase/
