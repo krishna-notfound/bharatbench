@@ -60,6 +60,8 @@ async def create_run(
     try:
         async with await anyio.open_file(tmp, "wb") as out:
             while chunk := await apk.read(CHUNK):
+                if size == 0 and not chunk.startswith(b"PK"):
+                    raise HTTPException(400, "Uploaded file is not a valid APK (not a ZIP archive)")
                 size += len(chunk)
                 if size > MAX_APK_BYTES:
                     raise HTTPException(413, "APK exceeds the 200 MB limit")
