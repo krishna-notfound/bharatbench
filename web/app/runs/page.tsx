@@ -1,12 +1,17 @@
+import type { Metadata } from "next";
 import { RunsList } from "@/components/runs/runs-list";
+
+export const metadata: Metadata = { title: "Sessions — BharatBench" };
 
 export default function RunsPage() {
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-3xl space-y-8 py-8 md:py-12">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Every Cheap Phone Test you have started, newest first.
+        <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
+          Sessions
+        </h1>
+        <p className="mt-2 text-muted-foreground">
+          Every test you have started, newest first.
         </p>
       </div>
       <RunsList />

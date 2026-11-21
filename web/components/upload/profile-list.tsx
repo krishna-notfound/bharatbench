@@ -1,27 +1,32 @@
 "use client";
 
-import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CARD } from "@/components/shell/surface";
 import type { Fidelity, Profile, ProfileId } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const FIDELITY: Record<Fidelity, { label: string; cls: string }> = {
-  controlled: { label: "Controlled", cls: "bg-success/15 text-success" },
-  approximated: {
-    label: "Approximated",
-    cls: "bg-sev-medium/15 text-sev-medium",
-  },
-  unsupported: { label: "Not simulated", cls: "bg-muted text-muted-foreground" },
+/** Friendly names; descriptions still come from the API. */
+export const FRIENDLY_NAME: Record<ProfileId, string> = {
+  baseline: "Baseline",
+  budget_2gb: "Budget Android",
+  flaky_network: "Weak Network",
+  low_storage: "Low Storage",
+  battery_saver: "Battery Saver",
+  process_death: "App restarts",
 };
 
-export function FidelityBadge({ fidelity }: { fidelity: Fidelity }) {
-  const f = FIDELITY[fidelity];
+const FIDELITY_LABEL: Record<Fidelity, string> = {
+  controlled: "Controlled",
+  approximated: "Approximated",
+  unsupported: "Not simulated",
+};
+
+export function FidelityTag({ fidelity }: { fidelity: Fidelity }) {
   return (
-    <Badge variant="secondary" className={f.cls}>
-      {f.label}
-    </Badge>
+    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+      {FIDELITY_LABEL[fidelity]}
+    </span>
   );
 }
 
@@ -30,81 +35,92 @@ export function ProfileList({
   selected,
   onToggle,
   disabled,
+  showHow,
 }: {
   profiles: Profile[];
   selected: Set<ProfileId>;
   onToggle: (id: ProfileId, on: boolean) => void;
   disabled?: boolean;
+  /** Advanced mode: reveal the technical "how" text per condition. */
+  showHow?: boolean;
 }) {
-  const [open, setOpen] = useState<ProfileId | null>(null);
-
   if (profiles.length === 0) {
     return (
-      <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-        The API returned no selectable profiles.
+      <p className="rounded-3xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+        No test conditions are available right now.
       </p>
     );
   }
 
   return (
-    <ul className="space-y-2">
+    <ul className="grid gap-3 sm:grid-cols-2">
       {profiles.map((p) => {
         const on = selected.has(p.id);
-        const expanded = open === p.id;
         return (
-          <li
-            key={p.id}
-            className={cn(
-              "rounded-xl border bg-card transition-colors",
-              on ? "border-primary/50" : "border-border",
-            )}
-          >
-            <div className="flex items-start gap-3 p-3">
+          <li key={p.id}>
+            <label
+              htmlFor={`profile-${p.id}`}
+              className={cn(
+                CARD,
+                "flex h-full cursor-pointer items-start gap-3 p-4 transition-colors",
+                on ? "border-primary/60 bg-accent/40" : "hover:border-primary/30",
+                disabled && "cursor-not-allowed opacity-70",
+              )}
+            >
               <Checkbox
                 id={`profile-${p.id}`}
                 className="mt-0.5"
                 checked={on}
                 disabled={disabled}
                 onCheckedChange={(v) => onToggle(p.id, v === true)}
-                aria-label={p.name}
               />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <label
-                    htmlFor={`profile-${p.id}`}
-                    className="cursor-pointer text-sm font-medium"
-                  >
-                    {p.name}
-                  </label>
-                  <FidelityBadge fidelity={p.fidelity} />
-                </div>
-                <p className="mt-0.5 text-sm text-muted-foreground">
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">
+                    {FRIENDLY_NAME[p.id] ?? p.name}
+                  </span>
+                  <FidelityTag fidelity={p.fidelity} />
+                </span>
+                <span className="mt-1 block text-sm text-muted-foreground">
                   {p.description}
-                </p>
-                <button
-                  type="button"
-                  aria-expanded={expanded}
-                  onClick={() => setOpen(expanded ? null : p.id)}
-                  className="mt-1.5 flex items-center gap-1 rounded text-xs text-accent-info outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                >
-                  How
-                  <ChevronDown
-                    className={cn(
-                      "size-3 transition-transform",
-                      expanded && "rotate-180",
-                    )}
-                  />
-                </button>
-                {expanded && (
-                  <p className="mt-1.5 rounded-md bg-muted p-2 text-xs text-muted-foreground">
+                </span>
+                {showHow && (
+                  <span className="mt-2 block rounded-2xl bg-muted p-2.5 text-xs text-muted-foreground">
                     {p.how}
-                  </p>
+                  </span>
                 )}
-              </div>
-            </div>
+              </span>
+            </label>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+export function AdvancedDisclosure({
+  open,
+  onToggle,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex items-center gap-1 rounded-full px-1 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        Advanced
+        <ChevronDown
+          className={cn("size-4 transition-transform", open && "rotate-180")}
+        />
+      </button>
+      {open && <div className="mt-3 space-y-3">{children}</div>}
+    </div>
   );
 }

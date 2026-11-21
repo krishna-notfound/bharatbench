@@ -18,18 +18,23 @@ export function ErrorState({
     <div
       role="alert"
       className={cn(
-        "flex flex-col items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-10 text-center",
+        "flex flex-col items-center gap-3 rounded-3xl border border-border bg-card px-6 py-10 text-center",
         className,
       )}
     >
-      <AlertTriangle className="size-5 text-destructive" />
+      <AlertTriangle className="size-5 text-muted-foreground" />
       <div>
         <p className="text-sm font-medium">{title}</p>
         <p className="mt-1 max-w-md text-sm text-muted-foreground">{message}</p>
       </div>
       {onRetry && (
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          <RotateCw /> Retry
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-full"
+          onClick={onRetry}
+        >
+          <RotateCw /> Try again
         </Button>
       )}
     </div>
@@ -52,11 +57,11 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-12 text-center",
+        "flex flex-col items-center gap-3 rounded-3xl border border-dashed border-input px-6 py-12 text-center",
         className,
       )}
     >
-      {icon && <div className="text-muted-foreground">{icon}</div>}
+      {icon && <div className="text-primary">{icon}</div>}
       <div>
         <p className="text-sm font-medium">{title}</p>
         {message && (
@@ -78,12 +83,7 @@ export function SectionTitle({
   className?: string;
 }) {
   return (
-    <h2
-      className={cn(
-        "text-sm font-medium uppercase tracking-wider text-muted-foreground",
-        className,
-      )}
-    >
+    <h2 className={cn("text-sm font-medium text-muted-foreground", className)}>
       {children}
     </h2>
   );

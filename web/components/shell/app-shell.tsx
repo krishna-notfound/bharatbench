@@ -8,8 +8,8 @@ import type { Health } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/", label: "New test" },
-  { href: "/runs", label: "Runs" },
+  { href: "/new", label: "New test" },
+  { href: "/runs", label: "Sessions" },
 ];
 
 type HealthState =
@@ -46,12 +46,12 @@ function HealthDot() {
   const online = h.kind === "online";
   const label =
     h.kind === "loading"
-      ? "Checking runtime…"
+      ? "Checking…"
       : online
-        ? "Emulator online"
+        ? "Emulator ready"
         : h.kind === "api-down"
-          ? "API unreachable"
-          : "Runtime offline — static scan only";
+          ? "Offline"
+          : "Emulator offline";
   const title = h.kind === "offline" ? h.detail : label;
   return (
     <div
@@ -81,29 +81,27 @@ function LogoMark() {
   return (
     <span
       aria-hidden
-      className="grid size-7 place-items-center rounded-md bg-primary font-mono text-sm font-bold text-primary-foreground"
-    >
-      B
-    </span>
+      className="block size-7 rounded-full bg-linear-to-br from-orb-a via-orb-b to-orb-c shadow-[0_0_0_4px_rgba(124,92,255,0.10)]"
+    />
   );
 }
 
 function NavLinks({ pathname }: { pathname: string | null }) {
   return (
-    <nav className="ml-2 flex items-center gap-1" aria-label="Primary">
+    <nav className="ml-1 flex items-center gap-0.5 sm:ml-3" aria-label="Primary">
       {NAV.map((n) => {
         const active =
           pathname !== null &&
-          (n.href === "/" ? pathname === "/" : pathname.startsWith(n.href));
+          pathname.startsWith(n.href);
         return (
           <Link
             key={n.href}
             href={n.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary",
+              "rounded-full px-3.5 py-1.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary",
               active
-                ? "bg-muted text-foreground"
+                ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -122,11 +120,11 @@ function ActiveNav() {
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4 md:px-8">
+      <header className="sticky top-0 z-30 bg-background/70 backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4 md:px-8">
           <Link
             href="/"
-            className="flex items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             <LogoMark />
             <span className="font-semibold tracking-tight">BharatBench</span>
@@ -139,7 +137,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 md:px-8">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-24 pt-4 md:px-8">
         {children}
       </main>
     </div>
