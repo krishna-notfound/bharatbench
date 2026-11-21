@@ -30,6 +30,7 @@ DANGEROUS_PERMISSIONS = [
 ]
 
 _HTTP_URL = re.compile(r"http://[^\s\"'<>]+")
+_HOST_OK = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)+")  # real dotted hostnames only (no "*", no bare words)
 _LOCAL_HOSTS = ("localhost", "127.0.0.1", "10.0.2.2", "0.0.0.0", "[::1]")
 _SCHEMA_HOSTS = (
     "schemas.android.com",
@@ -241,7 +242,7 @@ def check_http_urls(facts: ApkFacts, run_id: str) -> list[Finding]:
         for m in _HTTP_URL.finditer(s):
             url = m.group(0)
             host = url[len("http://") :].split("/")[0].split(":")[0].lower()
-            if not host or "." not in host or host in _LOCAL_HOSTS or any(host == h or host.endswith("." + h) for h in _SCHEMA_HOSTS):
+            if not _HOST_OK.fullmatch(host) or host in _LOCAL_HOSTS or any(host == h or host.endswith("." + h) for h in _SCHEMA_HOSTS):
                 continue
             if url not in urls:
                 urls.append(url)

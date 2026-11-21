@@ -8,11 +8,16 @@ def _cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
+def _one_line(text: str) -> str:
+    """Collapse multi-line errors (e.g. httpx 'For more information check: ...') into one line."""
+    return " ".join(text.split()).split(" For more information check:")[0]
+
+
 def render_markdown(run: Run, findings: list[Finding], profiles: list[Profile]) -> str:
     lines: list[str] = [f"# BharatBench report: {run.apk_name}", ""]
     lines += [f"- Run: `{run.id}`", f"- Status: {run.status}", f"- Created: {run.created_at.isoformat()}"]
     if run.error:
-        lines.append(f"- Error: {run.error}")
+        lines.append(f"- Error: {_one_line(run.error)}")
     lines.append("")
 
     lines += ["## App", ""]
@@ -43,7 +48,7 @@ def render_markdown(run: Run, findings: list[Finding], profiles: list[Profile]) 
             f"- Runtime testing executed: {'yes' if s.runtime_executed else 'no'}",
         ]
         if s.runtime_skipped_reason:
-            lines.append(f"- Runtime skipped because: {s.runtime_skipped_reason}")
+            lines.append(f"- Runtime skipped because: {_one_line(s.runtime_skipped_reason)}")
     else:
         lines.append("No summary yet.")
     lines.append("")

@@ -147,6 +147,10 @@ def test_http_urls_negative(make_facts, run_id):
         "http://localhost:8080/x",
         "http://127.0.0.1/x",
         "http://schemas.android.com/apk/res/android",
+        "http://*/*",
+        "http://wifi-not-enabled",
+        "http://ns.adobe.com/xap/1.0/",
+        "http://xml.org/sax/features/namespaces",
     ]
     assert check_http_urls(make_facts(strings=strings), run_id) == []
 
