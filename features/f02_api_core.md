@@ -1,6 +1,6 @@
 # f02 — API core: runs, pipeline, storage, scoring, report
 
-**Status:** Specced  |  **Depends on:** f01 (contracts)  |  **Owner:** Sonnet agent `api-core`
+**Status:** Implemented (pending merge)  |  **Depends on:** f01 (contracts)  |  **Owner:** Sonnet agent `api-core`
 
 ## Purpose
 
@@ -71,3 +71,4 @@ harness client, scoring, markdown report, all routes in `contracts/README.md` §
 ## Status Log
 
 - 2026-11-21 — Specced.
+- 2026-11-21 � Implemented on `feat/f02-api-core`. 33 tests pass (storage, scoring incl. 31.5 known value, pipeline, routes, WS). Review Focus 1/2/4 covered (corrupt APK -> failed; harness ConnectError at start and mid-run -> done + skipped reason; late WS client gets history then done). Server run on :8010: /api/health, /api/profiles, upload verified. Analyzer (f03) imported lazily; without it runs end `failed` with "No module named 'app.analyzer'". Notes: `step` event `step` = 1-based profile index; cancel emits status `cancelled` then an `error` event `{error:"cancelled"}` to terminate streams; `anyio` (starlette dependency) used for async file IO; `ruff check` flags PYI034 in frozen `models.py:198` (not edited).
