@@ -14,6 +14,8 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.analyzer.dedupe import dedupe_findings
+from app.analyzer.explain import explain_findings
 from app.events import EventBus
 from app.models import (
     AppInfo,
@@ -65,8 +67,7 @@ async def _set_status(storage: Storage, bus: EventBus, run: Run, status: RunStat
     return run
 
 
-async def _store_findings(storage: Storage, bus: EventBus, run_id: str, findings: list[Finding]) -> None:
-    scored = score_findings(findings)
+async def _store_findings(storage: Storage, bus: EventBus, run_id: str, scored: list[Finding]) -> None:
     await storage.add_findings(run_id, scored)
     for f in scored:
         await bus.publish(
@@ -216,7 +217,7 @@ async def run_pipeline(
         run = run.model_copy(update={"app": app_info, "updated_at": datetime.now(UTC)})
         await storage.update_run(run)
         await bus.publish(run_id, "log", f"Static analysis found {len(static)} findings.")
-        await _store_findings(storage, bus, run_id, static)
+        collected: list[Finding] = list(static)
 
         runtime_executed = False
         skipped_reason: str | None = None
@@ -225,13 +226,19 @@ async def run_pipeline(
             run, result = await _run_harness(
                 client, storage, bus, run, apk_path, data_dir / "runs" / run_id / "artifacts", job_ids
             )
-            await _store_findings(storage, bus, run_id, list(runtime_findings(run_id, result, package=app_info.package_name)))
+            collected.extend(runtime_findings(run_id, result, package=app_info.package_name))
             runtime_executed = True
         except _Skip as skip:
             skipped_reason = str(skip)
             await bus.publish(run_id, "log", f"Runtime testing skipped: {skipped_reason}")
 
         run = await _set_status(storage, bus, run, "scoring")
+        baseline_ran = runtime_executed and "baseline" in run.profile_ids
+        scored = score_findings(dedupe_findings(collected, baseline_ran=baseline_ran))
+        await bus.publish(run_id, "log", f"Explaining top findings\u2026 ({len(scored)} findings after dedupe)")
+        scored, explained = await explain_findings(scored)
+        await bus.publish(run_id, "log", f"Explanations done: {explained} finding(s) explained.")
+        await _store_findings(storage, bus, run_id, scored)
         all_findings = await storage.list_findings(run_id)
         summary = summarize(all_findings, runtime_executed, skipped_reason)
         run = await _set_status(storage, bus, run, "done", summary=summary)
