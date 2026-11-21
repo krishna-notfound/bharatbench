@@ -83,3 +83,9 @@ Browser panel:
 ## Status Log
 
 - 2026-11-21 — Specced.
+- 2026-11-21 — Implemented. Sarvam docs researched (`api/app/voice/SARVAM_NOTES.md`): STT `saaras:v4` REST `/speech-to-text`
+  (codemix, <=30 s chunks), chat `/v1/chat/completions` with native `tools` (model `sarvam-105b-conversations`,
+  override `SARVAM_CHAT_MODEL`), TTS `/text-to-speech` `bulbul:v3` speaker `shubh` wav 24 kHz; auth `api-subscription-key`.
+  Tool calling supported, so no JSON-action fallback. `pytest -q tests/voice`: 24 passed (clients, tools, WS turn,
+  slow-network start_test, voice utterance, interrupt without orphan audio, missing key, Sarvam failure).
+  Web: tsc, lint, build clean. NOT verified against live Sarvam or a real browser/mic (no key/device in dev).
