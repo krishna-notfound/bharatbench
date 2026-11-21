@@ -36,21 +36,27 @@ class RunServiceImpl:
                 await self.storage.update_run(failed)
                 await self.bus.publish(run.id, "error", "API restarted", {"error": "API restarted"})
 
-    async def create_run(self, apk_path: str, apk_name: str, profile_ids: list[ProfileId]) -> Run:
+    async def create_run(
+        self, apk_path: str, apk_name: str, profile_ids: list[ProfileId], journey_steps: int | None = None
+    ) -> Run:
         run_id = uuid.uuid4().hex[:12]
         dest = self.data_dir / "runs" / run_id / "app.apk"
         dest.parent.mkdir(parents=True, exist_ok=True)
         await asyncio.to_thread(shutil.copyfile, apk_path, dest)
-        return await self._start(run_id, apk_name, profile_ids, dest)
+        return await self._start(run_id, apk_name, profile_ids, dest, journey_steps)
 
-    async def rerun(self, source_run_id: str, profile_ids: list[ProfileId]) -> Run:
+    async def rerun(
+        self, source_run_id: str, profile_ids: list[ProfileId], journey_steps: int | None = None
+    ) -> Run:
         source = await self.storage.get_run(source_run_id)
         source_apk = await self.storage.get_apk_path(source_run_id)
         if source is None or source_apk is None:
             raise LookupError(f"Run {source_run_id} not found")
-        return await self.create_run(source_apk, source.apk_name, profile_ids)
+        return await self.create_run(source_apk, source.apk_name, profile_ids, journey_steps)
 
-    async def _start(self, run_id: str, apk_name: str, profile_ids: list[ProfileId], apk: Path) -> Run:
+    async def _start(
+        self, run_id: str, apk_name: str, profile_ids: list[ProfileId], apk: Path, journey_steps: int | None = None
+    ) -> Run:
         now = datetime.now(UTC)
         run = Run(
             id=run_id, apk_name=apk_name, status="queued", profile_ids=profile_ids, created_at=now, updated_at=now
@@ -65,6 +71,7 @@ class RunServiceImpl:
                 data_dir=self.data_dir,
                 harness_factory=self._harness_factory,
                 job_ids=self._job_ids,
+                journey_steps=journey_steps,
             )
         )
         self._tasks[run_id] = task
