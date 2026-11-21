@@ -1,6 +1,6 @@
 # f06 — Web UI: upload, runs, live run, findings report
 
-**Status:** Specced  |  **Depends on:** f01  |  **Owner:** Sonnet agent `web`
+**Status:** Implemented  |  **Depends on:** f01  |  **Owner:** Sonnet agent `web`
 
 ## Purpose
 
@@ -52,15 +52,15 @@ All types from `web/lib/types.ts`. API functions: `getHealth, getProfiles, creat
 
 ## Tasks
 
-- [ ] tokens + shell + api/ws clients
-- [ ] new test page
-- [ ] runs list
-- [ ] run detail + finding sheet
+- [x] tokens + shell + api/ws clients
+- [x] new test page
+- [x] runs list
+- [x] run detail + finding sheet
 
 ## Acceptance Criteria
 
-- [ ] `npm run lint`, `npx tsc --noEmit`, `npm run build` pass.
-- [ ] Against a running api: upload → live timeline → findings visible.
+- [x] `npm run lint`, `npx tsc --noEmit`, `npm run build` pass.
+- [x] Against a running api: upload → live timeline → findings visible.
 
 ## Verification
 
@@ -69,3 +69,4 @@ All types from `web/lib/types.ts`. API functions: `getHealth, getProfiles, creat
 ## Status Log
 
 - 2026-11-21 — Specced.
+- 2026-11-21 — Implemented by `web` agent on `feat/f06-web`: tokens, shell, `/`, `/runs`, `/runs/[id]`, api/ws clients, finding sheet. lint, tsc, build pass; `/` and `/runs` render with API down (error/offline states). Live upload -> timeline -> findings NOT verified against a running API (f02 unavailable). No shadcn components added. Notes: `/runs/[id]` wraps `await params` in Suspense (Cache Components enabled); `LayoutProps`/`PageProps` types need `next typegen` or a build before `tsc`.
