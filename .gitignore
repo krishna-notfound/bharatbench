@@ -1,0 +1,15 @@
+secrets/
+data/
+*.pem
+.env
+.env.*
+!.env.example
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+.next/
+context.zip
+.claude/settings.local.json
+harness/jobs/
