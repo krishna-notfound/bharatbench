@@ -59,6 +59,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health.router)
+    try:
+        from app.routes.imports import router as imports_router
+    except ImportError:
+        imports_router = None
+    if imports_router is not None:  # before runs so /api/runs/import is never shadowed by /{run_id}
+        app.include_router(imports_router)
     app.include_router(runs.router)
     app.include_router(ws_runs.router)
     try:

@@ -90,3 +90,17 @@ the client stops and flushes playback immediately.
 
 Uploading an APK happens in the web UI (voice cannot attach files); `start_test` re-runs an already
 uploaded APK. Destructive tool `cancel_run` requires the user to have said cancel/stop explicitly.
+
+## 8. GitHub import (f20)
+
+`POST /api/runs/import` body `{"repo_url": str, "profiles"?: ProfileId[]}` → `201 Run` (same shape as `POST /api/runs`).
+Accepts `https://github.com/{owner}/{repo}` (also `.git` suffix and `/releases/tag/{tag}`). Uses the GitHub
+REST API only: latest release, falling back to the newest release that has an `.apk` asset (`.aab` is never
+used; names with universal, arm64 then x86_64 are preferred). Asset must be <= 200 MB (checked from the
+declared size and again while streaming) and start with the ZIP magic `PK`. The run's `apk_name` is the asset
+name and a `log` event records `Imported from github.com/{owner}/{repo} release {tag}`. Nothing is built from
+source. Optional server env `GITHUB_TOKEN` (private repos / rate limits) is sent to GitHub only, never logged.
+
+Errors (`detail` is user-facing): 400 not a GitHub repo URL / not a ZIP / empty; 404 repo not found or private,
+no releases, or "This repo has no APK in its releases. Upload the APK, or add one to a GitHub release.";
+413 APK over 200 MB; 422 unknown profile; 429 GitHub rate limit; 502/504 GitHub or download failure.

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     supabase_service_role_key: str | None = None
     supabase_jwt_secret: str | None = None
     storage_backend: Literal["sqlite", "supabase"] = "sqlite"
+    github_token: str | None = None  # optional: private repos / higher rate limit. Never logged.
     cors_origins: str = "http://localhost:3000"
 
     @property
