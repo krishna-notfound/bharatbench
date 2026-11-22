@@ -129,6 +129,7 @@ export function LivePhone({ runId, active }: { runId: string; active: boolean })
       <aside
         aria-label="Live test phone"
         aria-hidden={minimized}
+        data-live-open={entered && !minimized ? "true" : "false"}
         className={`fixed z-40 transition-[transform,opacity] duration-[650ms] ease-[cubic-bezier(0.34,1.4,0.5,1)] motion-reduce:transition-none max-md:inset-x-0 max-md:bottom-0 max-md:rounded-t-3xl max-md:border-t max-md:border-border max-md:bg-card/95 max-md:pt-3 max-md:pb-4 max-md:shadow-[0_-12px_40px_rgba(124,92,255,0.25)] max-md:backdrop-blur md:top-24 md:right-4 ${
           entered && !minimized
             ? "translate-x-0 translate-y-0 opacity-100"
