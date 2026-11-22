@@ -32,7 +32,7 @@ export interface VadConfig {
 
 export const DEFAULT_VAD_CONFIG: VadConfig = {
   startMs: 120,
-  endSilenceMs: 250,
+  endSilenceMs: 900, // natural pauses (thinking, "umm") must not end the turn; was 250 ms and cut users off
   minSpeechMs: 200,
   frameMs: 20,
   startGapMs: 60,

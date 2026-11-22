@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # f15 realtime providers. Sarvam streaming is primary; REST is the fallback.
     sarvam_stream_stt: bool = True
     sarvam_stream_tts: bool = True
-    endpoint_grace_ms: int = 180  # speculative turn audio gate (Oryn ENDPOINT_GRACE_MS)
+    endpoint_grace_ms: int = 700  # speculative turn audio gate; 180 ms (Oryn) cut users off mid-sentence
     contest_timeout_s: float = 3.0
     # Gnani Prisma STT is implemented but inert unless GNANI_API_KEY is set. (Timbre TTS: not used.)
     gnani_api_key: str | None = None
