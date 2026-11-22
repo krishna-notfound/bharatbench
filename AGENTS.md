@@ -68,7 +68,7 @@ harness and the LLM).
 ```bash
 cd api     && uv sync && uv run pytest --collect-only -q | tail -1   # expect: 306 tests collected
 cd api     && uv run pytest -q && uv run ruff check .                # expect: all pass, ruff clean
-cd harness && uv sync && uv run pytest --collect-only -q | tail -1   # expect: 119 tests collected
+cd harness && uv sync && uv run pytest --collect-only -q | tail -1   # expect: 123 tests collected
 cd harness && uv run pytest -q && uv run ruff check .                # expect: all pass, ruff clean
 cd web     && npm ci && npm run lint && npx next typegen && npx tsc --noEmit && npm run build   # as in CI
 ```

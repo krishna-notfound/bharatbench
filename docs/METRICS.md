@@ -2,7 +2,7 @@
 
 ## Counted (reproducible)
 
-- API tests collected: 306. Harness tests collected: 119. Web unit tests: 0.
+- API tests collected: 306. Harness tests collected: 123. Web unit tests: 0.
 - Agent tools: 13 (`api/app/voice/tools.py` `TOOL_SCHEMAS`). Profiles: see `api/app/profiles.py`.
 
 ## Measured (single observations, not benchmarks)
