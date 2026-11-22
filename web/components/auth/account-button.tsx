@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut, UserRound } from "lucide-react";
 import { loginHref } from "@/lib/onboarding";
@@ -8,10 +9,20 @@ import { useSession } from "./use-session";
 const PILL =
   "shrink-0 whitespace-nowrap rounded-full border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none";
 
-/** Header account control. No silent auto-guest: signed out shows "Sign in". */
+/**
+ * Header account control. Visitors become a Supabase guest silently on first load, so every run they start is
+ * owned by them and only they see it (the API lists only the caller's own runs). Guests can upgrade to Google.
+ */
 export function AccountButton() {
   const s = useSession();
   const router = useRouter();
+  const tried = useRef(false);
+
+  useEffect(() => {
+    if (!s.available || !s.ready || s.session || tried.current) return;
+    tried.current = true;
+    void s.signInGuest();
+  }, [s]);
   // Read at click time: usePathname() here would opt every static page out of prerendering.
   const here = () => window.location.pathname + window.location.search;
 
