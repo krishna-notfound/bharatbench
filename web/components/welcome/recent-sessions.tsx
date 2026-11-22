@@ -30,7 +30,8 @@ export function RecentSessions() {
       </p>
     );
   }
-  const runs = (data ?? []).slice(0, 3);
+  // Lead with real results: only finished tests appear here.
+  const runs = (data ?? []).filter((r) => r.status === "done").slice(0, 3);
   if (runs.length === 0) return null;
 
   return (

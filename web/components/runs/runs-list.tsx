@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { FlaskConical } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Orb, orbStateFromRun } from "@/components/orb/orb";
@@ -15,6 +16,9 @@ import { cn } from "@/lib/utils";
 
 const POLL_MS = 5000;
 
+/** Stopped runs stay reachable but don't lead the list. */
+const STOPPED: Run["status"][] = ["failed", "cancelled"];
+
 function pollWhileActive(runs: Run[] | null): number | null {
   if (!runs) return POLL_MS;
   return runs.some((r) => !TERMINAL_STATUSES.includes(r.status))
@@ -24,6 +28,7 @@ function pollWhileActive(runs: Run[] | null): number | null {
 
 export function RunsList() {
   const { data, error, loading, reload } = useFetch(listRuns, pollWhileActive);
+  const [showAll, setShowAll] = useState(false);
 
   if (loading) {
     return (
@@ -68,7 +73,7 @@ export function RunsList() {
         </p>
       )}
       <ul className="space-y-3">
-        {data.map((r) => (
+        {(showAll ? data : data.filter((r) => !STOPPED.includes(r.status))).map((r) => (
           <li key={r.id}>
             <Link
               href={`/runs/${r.id}`}
@@ -109,6 +114,17 @@ export function RunsList() {
           </li>
         ))}
       </ul>
+      {data.some((r) => STOPPED.includes(r.status)) && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="mx-auto block rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+        >
+          {showAll
+            ? "Hide cancelled & failed"
+            : `Show cancelled & failed (${data.filter((r) => STOPPED.includes(r.status)).length})`}
+        </button>
+      )}
     </div>
   );
 }
