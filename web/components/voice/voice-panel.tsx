@@ -87,9 +87,10 @@ export function VoicePanel() {
           type="button"
           aria-label="Talk to BharatBench"
           onClick={() => window.dispatchEvent(new CustomEvent(OPEN_AGENT_EVENT))}
-          className="agent-launcher fixed right-4 bottom-4 z-40 flex size-14 items-center justify-center rounded-full border border-border bg-card shadow-[0_8px_24px_rgba(124,92,255,0.22)] transition-transform hover:scale-105 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none md:right-8 md:bottom-8"
+          className="agent-launcher fixed right-4 bottom-4 z-40 flex h-14 items-center gap-2 rounded-full border border-border bg-card pr-1 pl-1 shadow-[0_8px_24px_rgba(124,92,255,0.22)] transition-transform hover:scale-105 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none md:right-8 md:bottom-8 md:pr-4"
         >
           <Orb state={rt.orbState} size="sm" getLevel={rt.getLevel} />
+          <span className="text-sm font-medium max-md:sr-only">Talk to me</span>
         </button>
       )}
 

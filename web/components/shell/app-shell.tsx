@@ -1,6 +1,7 @@
 "use client";
 
 import { AccountButton } from "@/components/auth";
+import { TalkButton } from "@/components/voice/talk-button";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -136,6 +137,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Suspense>
           <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
             <HealthDot />
+            <TalkButton />
             <AccountButton />
           </div>
         </div>
