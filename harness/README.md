@@ -1,6 +1,6 @@
 # BharatBench harness (f04)
 
-FastAPI service that installs an APK on a headless Android emulator, applies condition profiles, crawls a
+FastAPI service that installs an APK on a Android device (redroid container by default; emulator is optional/legacy), applies condition profiles, crawls a
 bounded journey and returns real evidence (`HarnessResult`). API: `contracts/README.md` section 4.
 It is the only component that touches ADB. Binds `127.0.0.1` only; every route needs `X-Harness-Token`.
 
@@ -18,12 +18,12 @@ for `/usr/sbin/tc` only). Host setup: `bash deploy/setup_harness_ec2.sh` (needs 
 ```bash
 cd harness
 uv sync && uv run pytest -q && uv run ruff check .
-HARNESS_TOKEN=x uv run uvicorn harness.main:app --port 8110
-curl -i http://127.0.0.1:8110/health                          # 401
-curl -i -H "X-Harness-Token: x" http://127.0.0.1:8110/health  # 200 (adb:false without the SDK)
+HARNESS_TOKEN=x uv run uvicorn harness.main:app --port 8100
+curl -i http://127.0.0.1:8100/health                          # 401
+curl -i -H "X-Harness-Token: x" http://127.0.0.1:8100/health  # 200 (adb:false without the SDK)
 ```
 
-## EC2 instance guidance
+## EC2 instance guidance (emulator path only; redroid needs no KVM)
 
 - The emulator needs `/dev/kvm`. Choose a **nested-virtualization-capable** type (8th-gen Intel such as
   `c8i` / `m8i` / `r8i`, with nested virtualization enabled at launch) **or any `*.metal`** instance.
@@ -66,7 +66,7 @@ Then the API uses `HARNESS_URL=http://127.0.0.1:8100` and the same `HARNESS_TOKE
 
 ## Configuration (env / `.env`)
 
-`HARNESS_TOKEN` (required), `ANDROID_SERIAL=emulator-5554`, `JOBS_DIR=./jobs`, `ADB_PATH=adb`, `MAESTRO_PATH=maestro`.
+`HARNESS_TOKEN` (required), `ANDROID_SERIAL=127.0.0.1:5555` (redroid; `emulator-5554` only for `DEVICE_KIND=emulator`), `JOBS_DIR=./jobs`, `ADB_PATH=adb`, `MAESTRO_PATH=maestro`.
 
 ## Security notes
 

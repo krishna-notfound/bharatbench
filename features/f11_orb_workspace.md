@@ -1,6 +1,6 @@
 # f11 — Oryn-style orb + welcome
 
-**Status:** In progress | **Owner:** Sonnet `orb-ui`
+**Status:** Built (merged to main; see docs/FEATURE_MAP.md) | **Owner:** Sonnet `orb-ui`
 
 ## Owns
 `web/components/orb/**`, `web/components/welcome/**`, `web/app/page.tsx`, `web/app/globals.css` (orb keyframes/tokens only),

@@ -1,6 +1,6 @@
 # f03 — Analyzer: static APK scan + runtime evidence rules
 
-**Status:** Done  |  **Depends on:** f01  |  **Owner:** Sonnet agent `analyzer`
+**Status:** Built (merged to main; see docs/FEATURE_MAP.md)  |  **Depends on:** f01  |  **Owner:** Sonnet agent `analyzer`
 
 ## Purpose
 

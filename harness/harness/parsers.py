@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 from .models import HarnessCrash
 
+# Labels the crawler and the f23 agent must never tap. Keep in step with DeviceAudit._RISKY in security.py,
+# which applies a similar safety filter to exported-component names for the dynamic security probes.
 DENYLIST = (
     "logout", "log out", "sign out", "delete", "remove", "pay", "buy",
     "purchase", "checkout", "uninstall", "call", "sms",

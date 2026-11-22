@@ -1,6 +1,6 @@
 # f06 — Web UI: upload, runs, live run, findings report
 
-**Status:** Implemented  |  **Depends on:** f01  |  **Owner:** Sonnet agent `web`
+**Status:** Built (merged to main; see docs/FEATURE_MAP.md)  |  **Depends on:** f01  |  **Owner:** Sonnet agent `web`
 
 ## Purpose
 

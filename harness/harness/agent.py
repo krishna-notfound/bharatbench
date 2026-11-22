@@ -3,6 +3,13 @@
 For one AgentTest: send the LLM the goal and a compact list of visible UI nodes, execute the single action
 it answers with (tap / fill / back / done / fail) through the Crawler primitives, repeat up to MAX_STEPS.
 The API key is never logged.
+
+Invariants (tests: harness/tests/test_agent.py, test_credentials.py):
+- The LLM only sees node text, never a stored password: secrets.py tokenises credentials before the prompt and
+  expands them at input time.
+- The same denylist as the crawler (`parsers.is_denied`) vetoes any tap the model asks for.
+- With no LLM key configured the agent tests are skipped with a note, not faked.
+- Bounded by MAX_STEPS actions and a per-call timeout.
 """
 
 import json

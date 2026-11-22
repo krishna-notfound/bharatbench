@@ -6,8 +6,8 @@ Browser (Next.js web)  ──REST + WS /ws/runs/{id}──►  FastAPI api (lapt
                                                          ├─ analyzer (androguard)  ├─ storage (SQLite + files)
                                                          ├─ voice agent ──HTTPS/WSS──► Sarvam STT / LLM / TTS
                                                          └─ harness client ──HTTP (SSH tunnel :8100)──►
-                                                               harness service on EC2 (KVM)
-                                                               ADB ─► Android Emulator (2 GB AVD) + Maestro
+                                                               harness service on EC2
+                                                               ADB ─► redroid Android 12 container (127.0.0.1:5555) + Maestro
 ```
 
 ## Stack
@@ -21,7 +21,7 @@ Browser (Next.js web)  ──REST + WS /ws/runs/{id}──►  FastAPI api (lapt
 | Storage (now) | SQLite (`data/bharatbench.db`) + files (`data/runs/`) | Runs, findings, events, artifacts |
 | Storage (Supabase) | Supabase Postgres via PostgREST (`api/app/storage/supabase.py`) | Available now behind `STORAGE_BACKEND=supabase` (needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`); Storage bucket + Auth still later |
 | Voice/AI | Sarvam: streaming STT, chat LLM (tool calling), TTS | Voice agent |
-| Harness | FastAPI on Ubuntu 24.04 EC2 with KVM, Android SDK cmdline-tools, emulator, ADB, Maestro | Executes APK under profiles |
+| Harness | FastAPI on Ubuntu 24.04 EC2, redroid (Android 12 container, adb serial `127.0.0.1:5555`), ADB, Maestro, tc. The Android emulator + KVM path is optional/legacy (`DEVICE_KIND=emulator`) | Executes APK under profiles |
 | Email (later) | Resend | Run-complete emails |
 
 Verified versions: fill from `web/package.json`, `api/uv.lock`, `harness/uv.lock` — never from memory.
@@ -58,7 +58,7 @@ Artifacts: `data/runs/{run_id}/artifacts/{profile_id}/{file}`. Pydantic models i
 
 ## Auth and Authorization Model
 
-- Prototype: no user auth. API binds to localhost / is behind the demo machine.
+- Supabase guest/Google auth is implemented (`api/app/auth/supabase.py`); `AUTH_REQUIRED` is off by default.
 - Harness: shared secret header `X-Harness-Token`, bound to 127.0.0.1 on EC2, reached only via SSH tunnel.
 - Later: Supabase Auth JWT verified in FastAPI dependency; runs get `user_id`; RLS in Postgres.
 
@@ -67,7 +67,7 @@ Artifacts: `data/runs/{run_id}/artifacts/{profile_id}/{file}`. Pydantic models i
 - SQLite: runs, findings, events. Files: APKs, screenshots, UI dumps, logcat, Maestro flows.
 - Secrets only in `api/.env`, `harness/.env`, `secrets/` (all gitignored). Env vars:
   `SARVAM_API_KEY`, `HARNESS_URL`, `HARNESS_TOKEN`, `DATA_DIR`, `CORS_ORIGINS`, `NEXT_PUBLIC_API_URL`,
-  harness: `HARNESS_TOKEN`, `ANDROID_SERIAL` (default `emulator-5554`), `JOBS_DIR`, `ANDROID_HOME`.
+  harness: `HARNESS_TOKEN`, `ANDROID_SERIAL` (default `127.0.0.1:5555`, redroid), `JOBS_DIR`, `ANDROID_HOME`.
 
 ## Invariants
 

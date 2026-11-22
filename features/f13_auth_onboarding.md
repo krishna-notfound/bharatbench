@@ -1,6 +1,6 @@
 # f13 — Sign-in pages (Google + guest) and onboarding
 
-**Status:** In progress | **Depends on:** f10, f11 | **Owner:** Sonnet `onboarding`
+**Status:** Built (merged to main; see docs/FEATURE_MAP.md) | **Depends on:** f10, f11 | **Owner:** Sonnet `onboarding`
 
 ## Purpose
 Oryn-quality first-run experience on phone and web: a proper sign-in page (Continue with Google / Continue as guest),

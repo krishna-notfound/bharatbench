@@ -1,4 +1,13 @@
-"""Launch the app and walk a bounded, safe journey, collecting screenshots, UI dumps and steps."""
+"""Launch the app and walk a bounded, safe journey, collecting screenshots, UI dumps and steps.
+
+Invariants (tests: harness/tests/test_crawler.py, test_forms.py, test_live.py):
+- The journey is bounded (a maximum step count) and never taps a control whose label matches the denylist
+  `parsers.DENYLIST` (logout, delete, pay, buy, purchase, checkout, uninstall, call, sms, ...). The dynamic
+  security probes in security.py use a separate, name-based filter (`_RISKY`); keep the two lists in step.
+- Settling after an action uses UI change detection, not fixed sleeps (f22).
+- Form fields are filled with fake values, or with the optional test account (secrets.py) which is masked in logs.
+- Every step is recorded (action, target, tap point, screen index) so the API can serve live view and replay.
+"""
 
 import asyncio
 import time

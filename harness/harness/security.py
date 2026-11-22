@@ -440,6 +440,7 @@ class DeviceAudit:
         )  # fmt: skip
 
     # --- 3. exported components
+    # Destructive-sounding component names are never probed. Keep in step with parsers.DENYLIST (UI labels).
     _RISKY = re.compile(r"(?i)panic|wipe|delete|remove|logout|signout|reset|uninstall|pay|purchase|checkout|erase|clear")
     MAX_PROBES: ClassVar[dict[str, int]] = {"activity": 6, "service": 4, "receiver": 4}
 

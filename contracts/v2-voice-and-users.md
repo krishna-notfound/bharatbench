@@ -1,5 +1,12 @@
 # Contract v2 — Realtime voice, users, conversations (frozen 2026-11-21)
 
+**Last amended:** 2026-11-22.
+
+| Date | Change |
+| ---- | ------ |
+| 2026-11-21 | Frozen with f09-f12. |
+| 2026-11-22 | Documentation pass: section 1 note that the agent tool list is the 13 tools in `api/app/voice/tools.py` `TOOL_SCHEMAS` (see `contracts/README.md` section 6), and that there is no cancel tool. Auth status: Supabase guest and Google sign-in are implemented (`api/app/auth/supabase.py`); `AUTH_REQUIRED` is off by default. |
+
 Supersedes `contracts/README.md` §5 (voice WS). §1–4 and §6 tools stay valid. Oryn reference repo
 (read-only): `D:\Project\ganai-ai-project\dost-ai`. Never copy files from it that hold secrets (`.env*`, `*.pem`).
 
@@ -23,6 +30,8 @@ Mic audio: binary 16 kHz mono PCM s16le, 20 ms frames. TTS audio: PCM s16le at t
 - `job.update` `{ run_id, status: RunStatus, message, progress: number | null }` — pushed for every run the
   session started or is watching, independent of turns. Agent narrates `running`/`done`/`failed` only when idle.
 - `state` values add `"working"` (a tool is executing).
+
+Tools available to the agent: see `contracts/README.md` section 6 (13 tools; cancel is HTTP-only).
 
 Rules: tools that start long work return immediately with a run id (async job pattern); the agent never
 says a test finished unless a `job.update` with `done` arrived. Max 4 tool rounds per turn, tool timeout 20 s.

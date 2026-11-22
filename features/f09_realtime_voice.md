@@ -1,6 +1,6 @@
 # f09 — Realtime voice engine (Oryn port): server (voice-server) + client (voice-client)
 
-**Status:** In progress | **Depends on:** contracts/v2-voice-and-users.md | **Owners:** Sonnet `voice-server`, Sonnet `voice-client`
+**Status:** Built (merged to main; see docs/FEATURE_MAP.md) | **Depends on:** contracts/v2-voice-and-users.md | **Owners:** Sonnet `voice-server`, Sonnet `voice-client`
 
 Purpose: Oryn-quality voice — streaming STT, streaming LLM, clause-level TTS, scheduled playback, smart barge-in
 (duck → contest → cancel), generation fence — plus BharatBench tool events and async test jobs.

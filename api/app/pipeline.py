@@ -1,6 +1,16 @@
 """Run pipeline: static analysis -> harness -> runtime rules -> scoring -> done.
 
 Runtime testing is skipped (with a recorded reason), never faked, when the harness is missing or fails.
+
+Invariants (each has a test; see docs/EVALUATION.md):
+- Every run ends `done`, `failed` or `cancelled`; pipeline exceptions are caught and recorded on the run.
+  Server shutdown / watchdog cancellation deliberately leaves the run untouched so startup recovery can resume it.
+- Runtime is skipped, never simulated: harness missing, unreachable, busy, low disk (MIN_DISK_MB) or stalled
+  (STALL_TIMEOUT_S / HARNESS_TIMEOUT_S) -> static findings are kept and `summary.runtime_skipped_reason` says why.
+- Test-account credentials live only in the in-memory CREDENTIALS dict (owned by services.RunServiceImpl) and are
+  masked out of harness results before storage (mask_secrets / _scrub_result); they are never written to disk.
+- Artifact paths from the harness are downloaded into data/runs/{run_id}/artifacts/ and confined to that directory.
+- The harness job is always cancelled/deleted afterwards (_cleanup_job), even on failure.
 """
 
 import asyncio

@@ -1,6 +1,6 @@
 # f04 — Harness service (EC2): emulator, profiles, crawler, evidence
 
-**Status:** Implemented (emulator-dependent parts unverified)  |  **Depends on:** f01  |  **Owner:** Sonnet agent `harness`
+**Status:** Built (merged to main; see docs/FEATURE_MAP.md)  |  **Depends on:** f01  |  **Owner:** Sonnet agent `harness`
 
 ## Purpose
 

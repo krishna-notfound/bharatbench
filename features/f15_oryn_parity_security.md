@@ -1,6 +1,6 @@
 # f15 — Oryn-parity voice pipeline, voice-first home, dynamic security tests
 
-**Status:** In progress | **Depends on:** f09, f14 | **Owners:** Sonnet `voice-engine`, Sonnet `voice-home`, Sonnet `harness-security`
+**Status:** Built (merged to main; see docs/FEATURE_MAP.md) | **Depends on:** f09, f14 | **Owners:** Sonnet `voice-engine`, Sonnet `voice-home`, Sonnet `harness-security`
 
 ## A. voice-engine (server) — owns `api/app/realtime/**`, `api/tests/realtime/**`, `api/app/settings.py` (new provider fields only)
 Goal: the server pipeline matches Oryn (`D:\Project\ganai-ai-project\dost-ai\backend\app\` — engine.py, pipeline.py, streams.py,

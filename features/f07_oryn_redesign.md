@@ -1,6 +1,6 @@
 # f07 — Oryn-inspired redesign (welcome, connect, agent, results)
 
-**Status:** In progress  |  **Depends on:** f05, f06  |  **Owner:** Sonnet `journey` (A) + Sonnet `agent-results` (B)
+**Status:** Built (merged to main; see docs/FEATURE_MAP.md)  |  **Depends on:** f05, f06  |  **Owner:** Sonnet `journey` (A) + Sonnet `agent-results` (B)
 
 ## Purpose
 

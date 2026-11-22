@@ -1,6 +1,6 @@
 # f10 — Users + shared conversation history
 
-**Status:** In progress | **Depends on:** contracts/v2-voice-and-users.md | **Owner:** Sonnet `users`
+**Status:** Built (merged to main; see docs/FEATURE_MAP.md) | **Depends on:** contracts/v2-voice-and-users.md | **Owner:** Sonnet `users`
 
 Purpose: Oryn-style auth (Supabase anonymous guest + Google), one persistent conversation shared by voice and text,
 history UI, runs owned by users.

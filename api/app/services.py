@@ -1,4 +1,15 @@
-"""RunServiceImpl: the single service used by routes and the voice agent."""
+"""RunServiceImpl: the single service used by routes and the voice agent.
+
+Owns the run lifecycle: one asyncio task per run (pipeline.run_pipeline), the event bus, the graceful-stop flags,
+the in-memory test-account store (pipeline.CREDENTIALS, dropped when the task ends) and the reliability layer.
+
+Invariants (tests in api/tests/test_reliability.py, test_resume.py, test_pipeline.py, test_credentials.py):
+- cancel_run is a graceful stop, not a kill: it sets a flag and the pipeline finishes with the results so far.
+- Shutdown never rewrites in-progress runs; recover_orphans() resumes them at startup (max MAX_RESUMES times,
+  same run id), then fails them with a human reason.
+- A watchdog sweeps runs with no status change for STUCK_AFTER_S and ends them with STUCK_REASON.
+- Credentials are never persisted or logged.
+"""
 
 import asyncio
 import contextlib

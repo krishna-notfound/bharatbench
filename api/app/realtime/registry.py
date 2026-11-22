@@ -1,4 +1,4 @@
-"""Tool registry: reuses api/app/voice/tools.py (7 tools) and adds friendly labels for tool.started."""
+"""Tool registry: reuses api/app/voice/tools.py (all 13 tools in TOOL_SCHEMAS) and adds friendly labels for tool.started."""
 
 from __future__ import annotations
 

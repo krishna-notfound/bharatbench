@@ -32,6 +32,8 @@ HackFront 2026 · Team **BrahMoss**
 
 ## Overview
 
+For reviewers: start with [AGENTS.md](AGENTS.md) and [docs/EVALUATION.md](docs/EVALUATION.md).
+
 Most Android apps are tested on a flagship phone, on office Wi-Fi, with plenty of storage. Many of their
 users have a 2 GB phone, a shaky mobile connection, nearly full storage, battery saver on, and an app that
 gets killed the moment they switch apps.
@@ -45,7 +47,7 @@ developer what to fix first:
 - **Impact ranking**: every finding gets a score from the share of target users it affects, its severity, and
   how often the flow is used. The assumptions are shown next to the score and can be adjusted.
 - **Reproducible output**: a markdown report, and a Maestro flow for each runtime finding.
-- **Voice** (in progress): start a test, hear progress and explanations in Hindi, English or Hinglish.
+- **Voice** (implemented, realtime and REST): start a test, hear progress and explanations in Hindi, English or Hinglish.
 
 A run never invents results. If the device lab is unreachable, the run completes with static findings and
 states why runtime testing was skipped.
@@ -58,7 +60,7 @@ states why runtime testing was skipped.
 | :--- | :--- | :--- |
 | Security (static) | debuggable builds, `allowBackup`, cleartext traffic, exported components without permission, dangerous permissions, hard-coded secrets and keys, `http://` URLs, WebView JavaScript bridges | `api/app/analyzer/` |
 | Size and performance (static) | APK size, dex count, bundled native ABIs, min/target SDK, missing shrinking or obfuscation | `api/app/analyzer/` |
-| Launch and journey (runtime) | launch timing, automated crawl (launch plus N taps, with a label denylist for logout, delete, pay, buy, purchase, sign out, uninstall) | `harness/harness/crawler.py` |
+| Launch and journey (runtime) | launch timing, automated crawl (launch plus N taps, with a label denylist `DENYLIST` in `harness/harness/parsers.py`: logout, log out, sign out, delete, remove, pay, buy, purchase, checkout, uninstall, call, sms) | `harness/harness/crawler.py` |
 | Stability (runtime) | crashes, ANRs, network error screens, stuck loading, state loss after process death, memory (PSS) | `harness/harness/`, `api/app/scoring.py` |
 | Cleartext traffic (runtime) | short `tcpdump` capture during the run | `harness/harness/security.py` |
 | Scoring | impact score = 100 × users exposed × severity weight × flow usage; overall reliability score | `api/app/scoring.py`, `api/app/report.py` |
@@ -107,7 +109,7 @@ flowchart LR
         HAR["Harness (FastAPI)<br/>127.0.0.1:8100<br/>X-Harness-Token"]
         RED["redroid container<br/>Android 12, adb 127.0.0.1:5555<br/>+ Maestro, tc, tcpdump"]
     end
-    SUPA[("Supabase<br/>Postgres (RLS), Auth (in progress)")]
+    SUPA[("Supabase<br/>Postgres (RLS), Auth (guest, Google)")]
     SARV["Sarvam AI<br/>STT, chat LLM, TTS"]
     GNANI["Gnani Prisma STT<br/>(optional)"]
 
@@ -243,7 +245,7 @@ Each app has its own file. Copy the `.env.example` next to it and fill in the va
 | `ENDPOINT_GRACE_MS`, `CONTEST_TIMEOUT_S` | `180`, `3.0` | Voice turn timing |
 | `GNANI_API_KEY`, `GNANI_STT_WS_URL`, `GNANI_STT_MODEL`, `GNANI_STT_FORMAT` | empty, default endpoint, `prisma-v3.0`, `codemix` | Optional Gnani Prisma speech-to-text. Inert without the key |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | empty | Supabase storage (server-side only) |
-| `SUPABASE_JWT_SECRET`, `AUTH_REQUIRED` | empty, `false` | Planned auth: JWT verification and enforcement |
+| `SUPABASE_JWT_SECRET`, `AUTH_REQUIRED` | empty, `false` | JWT verification (implemented) and enforcement (off by default) |
 | `API_BASE` | empty | Optional base URL the voice agent prepends to API links |
 | `BB_SAMPLE_APK` | empty | Test only: APK for the optional analyzer smoke test |
 
@@ -303,11 +305,16 @@ bharatbench/
 │   ├── app/models.py       frozen contracts (source of truth for names)
 │   ├── app/profiles.py     frozen condition profiles and fidelity labels
 │   ├── app/analyzer/       static APK analysis (androguard)
-│   ├── app/voice/          Sarvam voice agent and tools
+│   ├── app/voice/          Sarvam voice agent and tools (13)
+│   ├── app/auth/           Supabase JWT verification
+│   ├── app/conversations/  conversation store
+│   ├── app/agent_tests.py  LLM-written app tests
+│   ├── app/insights.py     Play risk, compare, team brief
 │   ├── app/realtime/       streaming voice pipeline
 │   ├── app/storage/        SQLite and Supabase behind one interface
 │   └── app/routes/         HTTP and WebSocket routes
 ├── harness/                FastAPI on the EC2 device host: redroid, adb, Maestro, tc, evidence
+│   └── harness/            agent.py, heal.py, forms.py, live.py, security.py, crawler.py, jobs.py
 ├── web/                    Next.js app: upload, live run, report, voice panel
 ├── contracts/README.md     frozen REST, WebSocket, harness and voice contracts
 ├── context/                project overview, architecture, UI and code standards, progress tracker
@@ -328,12 +335,13 @@ bharatbench/
 - **The harness is private.** It listens on `127.0.0.1`, requires `X-Harness-Token`, takes one job at a time,
   and validates paths and job ids before any file or adb operation.
 - **Artifact paths are confined.** Paths with `..` or absolute paths are rejected.
-- **Database access.** Supabase tables have RLS enabled with no public policies. Only the API's server-side
-  service-role key reads and writes them.
+- **Database access.** RLS is enabled on all tables. `conversations`, `messages` and `profiles` have own-row policies
+  (`supabase/migrations/20261121010000_users_conversations.sql`); `runs`, `findings` and `events` have none, so only the
+  API's server-side service-role key reads and writes them.
 - **The voice agent has no shell access.** It can only call the tools listed in `contracts/README.md` section 6.
-  Cancelling a run requires an explicit user request.
-- **No authentication yet in the prototype.** Auth is planned (Supabase Auth, JWT verification and RLS per user).
-  Until then the API is meant to run behind the demo host, not as a public multi-user service.
+  There is no cancel tool; stopping a run is HTTP-only and graceful (`contracts/README.md` section 6).
+- **Authentication.** Supabase guest and Google sign-in are implemented (`api/app/auth/supabase.py`), but
+  `AUTH_REQUIRED` is off by default, so a default deployment is not a locked-down multi-user service.
 
 ---
 
@@ -347,9 +355,9 @@ Current state is tracked in [`context/progress-tracker.md`](context/progress-tra
 | Static APK analysis, scoring, report | Implemented (`api/`) |
 | Runtime testing on the device lab (profiles, journey, evidence) | Implemented in `harness/`; live end-to-end on the EC2 device host is the current milestone |
 | Web UI: upload, live run, report | Implemented (`web/`) |
-| Voice agent (Sarvam STT, LLM, TTS) | In progress (realtime voice and conversations) |
+| Voice agent (Sarvam STT, LLM, TTS) | Implemented (realtime and REST) |
 | Supabase storage backend | Implemented, selected with `STORAGE_BACKEND=supabase` (SQLite is the default) |
-| Supabase Auth and per-user data | Planned (in progress) |
+| Supabase Auth and per-user data | Implemented; enforcement off by default (`AUTH_REQUIRED`) |
 | GitHub repository to APK build | Deferred: untrusted build scripts and toolchain variance |
 | Resend emails on run completion | Deferred: needs user emails from auth |
 | Multi-device concurrency and job queue | Deferred: one device, one job |

@@ -1,6 +1,6 @@
 # f12 — Evidence-grounded AI explanations, dedupe, baseline comparison
 
-**Status:** In progress | **Owner:** Sonnet `intelligence`
+**Status:** Built (merged to main; see docs/FEATURE_MAP.md) | **Owner:** Sonnet `intelligence`
 
 ## Owns
 `api/app/analyzer/explain.py`, `api/app/analyzer/dedupe.py`, `api/tests/analyzer/test_explain.py`, `test_dedupe.py`, and a small

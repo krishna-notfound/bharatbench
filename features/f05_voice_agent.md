@@ -1,6 +1,6 @@
 # f05 — Voice agent (Sarvam STT + LLM tools + TTS, barge-in)
 
-**Status:** Specced  |  **Depends on:** f01, f02 (`get_run_service()`)  |  **Owner:** Sonnet agent `voice`
+**Status:** Built (merged to main; see docs/FEATURE_MAP.md)  |  **Depends on:** f01, f02 (`get_run_service()`)  |  **Owner:** Sonnet agent `voice`
 
 ## Purpose
 

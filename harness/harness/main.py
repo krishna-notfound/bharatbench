@@ -1,3 +1,11 @@
+"""Harness HTTP API (runs on the device host only; contracts/README.md section 4).
+
+Invariants (tests: harness/tests/test_api_jobs.py, test_live.py, test_heal.py):
+- Binds 127.0.0.1 in deployment; every route requires X-Harness-Token, compared with hmac.compare_digest.
+- One job at a time: POST /jobs returns 409 while a job runs (jobs.py owns the device).
+- Job ids must be 32-hex and artifact paths must resolve inside the job directory; anything else is rejected.
+- adb and host tools are invoked with argument lists only (never shell=True); the API host never runs the APK.
+"""
 import hmac
 import re
 import shutil
