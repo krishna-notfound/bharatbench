@@ -1,4 +1,4 @@
-"""Report insights: Play Store risk, run-vs-previous comparison, and a spoken team brief (f20).
+"""Report insights: stability / Play Store risk, run-vs-previous comparison, and a spoken team brief (f20).
 
 Everything is derived from a run's real findings. The Play Store card never claims a real-user rate: it says what
 the lab observed and what Google Play's bad-behaviour thresholds are.
@@ -43,43 +43,102 @@ def _reasons(findings: list[Finding]) -> list[dict[str, str]]:
     return list(seen.values())
 
 
-def _result(level: RiskLevel, headline: str, reasons: list[dict[str, str]]) -> dict[str, Any]:
-    return {"level": level, "headline": headline, "reasons": reasons, "thresholds": THRESHOLDS}
+_PROFILE_NAMES = {
+    "baseline": "Normal phone",
+    "budget_2gb": "2 GB budget phone",
+    "flaky_network": "Weak network",
+    "low_storage": "Low storage",
+    "battery_saver": "Battery saver",
+    "process_death": "App restarts",
+}
+_PLAY_CACHE: dict[str, bool | None] = {}
 
 
-def assess_play_risk(run: Run, findings: list[Finding]) -> dict[str, Any]:
-    """Honest, lab-based Play Store risk level for a run."""
+async def play_listing(package: str | None) -> bool | None:
+    """True if the package has a public Google Play listing, False if Play says it doesn't, None if unknown."""
+    if not package:
+        return None
+    if package in _PLAY_CACHE:
+        return _PLAY_CACHE[package]
+    url = "https://play.google.com/store/apps/details"
+    try:
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+            r = await client.get(url, params={"id": package, "hl": "en"})
+        found: bool | None = True if r.status_code == 200 else False if r.status_code == 404 else None
+    except httpx.HTTPError:
+        found = None
+    if found is not None:
+        _PLAY_CACHE[package] = found
+    return found
+
+
+def _tested(run: Run, findings: list[Finding]) -> list[str]:
+    """Conditions that actually ran on the device (profiles marked not-applied are excluded)."""
+    skipped = {f.profile_id for f in findings if f.rule_id == "rt.profile_not_applied"}
+    return [_PROFILE_NAMES.get(p, p) for p in run.profile_ids if p not in skipped]
+
+
+def _play_note(on_play: bool | None, package: str | None) -> str:
+    if on_play is True:
+        return f"This app is on Google Play, where {_LIMITS}."
+    if on_play is False:
+        return (
+            f"{package} is not on Google Play, so Play's limits (0.47% ANR, 1.09% crash rate of users) "
+            "only apply once you publish."
+        )
+    return "We could not check Google Play for this app."
+
+
+def _result(
+    level: RiskLevel, headline: str, reasons: list[dict[str, str]], on_play: bool | None = None,
+    tested: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "level": level,
+        "headline": headline,
+        "reasons": reasons,
+        "thresholds": THRESHOLDS,
+        "on_play_store": on_play,
+        "tested_conditions": tested or [],
+    }
+
+
+def assess_play_risk(run: Run, findings: list[Finding], on_play: bool | None = None) -> dict[str, Any]:
+    """What the lab actually observed, plus Google Play context only when the app is really on Play."""
+    package = run.app.package_name if run.app else None
     if run.status != "done":
-        return _result("unknown", "Not assessed yet: the run has not finished.", [])
+        return _result("unknown", "Not assessed yet: the run has not finished.", [], on_play)
     if not (run.summary and run.summary.runtime_executed):
-        return _result("unknown", "Not tested on a device, so crash and ANR behaviour is unknown.", [])
+        return _result(
+            "unknown", "Not tested on a device, so crash and ANR behaviour is unknown.", [], on_play
+        )
+    tested = _tested(run, findings)
+    where_tested = ", ".join(tested) or "the lab"
+    note = _play_note(on_play, package)
 
     crashes = [f for f in findings if f.rule_id in _CRASH_RULES]
     if crashes:
-        names = {"rt.anr": "ANR", "rt.crash": "crash", "rt.launch_failed": "launch failure"}
+        names = {"rt.anr": "ANR (freeze)", "rt.crash": "crash", "rt.launch_failed": "launch failure"}
         what = " and ".join(sorted({names[f.rule_id] for f in crashes}))
         article = "an" if what[0] in "AEIOU" else "a"
         budget_only = {f.profile_id for f in crashes} == {"budget_2gb"}
         lead = "High risk for budget phones" if budget_only else "High risk"
-        where = " on the 2 GB budget-phone profile" if budget_only else ""
-        head = (
-            f"{lead}: we observed {article} {what}{where} in our lab. {_LIMITS}; "
-            "we cannot measure your real-user rate."
-        )
-        return _result("high", head, _reasons(crashes))
+        where = " on the 2 GB budget-phone condition" if budget_only else ""
+        head = f"{lead}: we saw {article} {what}{where} on our test phone. {note} We cannot measure your real-user rate."
+        return _result("high", head, _reasons(crashes), on_play, tested)
 
     net = [f for f in findings if f.rule_id in _NETWORK_RULES]
     if net:
         head = (
-            "Medium risk: we observed no crash or ANR in our lab, but the app showed network errors or got stuck "
-            "loading on a slow connection, which frustrates users and can cause freezes in the field."
+            "Medium risk: no crash or freeze seen, but the app showed network errors or got stuck loading on a "
+            f"slow connection ({where_tested}). {note}"
         )
-        return _result("medium", head, _reasons(net))
+        return _result("medium", head, _reasons(net), on_play, tested)
     head = (
-        f"Low risk: we observed no crash or ANR in our lab runs. This is a small sample, not your real-user rate. "
-        f"{_LIMITS}."
+        f"No crashes or freezes seen in {len(tested)} lab condition(s): {where_tested}. "
+        f"One short run is a small sample. {note}"
     )
-    return _result("low", head, [])
+    return _result("low", head, [], on_play, tested)
 
 
 async def compare_with_previous(service: RunService, run: Run) -> dict[str, Any] | None:
@@ -176,7 +235,7 @@ async def build_brief(
     """{text, audio_b64, language}. Raises SarvamError if no text; audio_b64 is None when TTS fails."""
     lang = _language(language)
     report = await _get_report(service, {"run_id": run.id}, ToolContext())
-    risk = assess_play_risk(run, findings)
+    risk = assess_play_risk(run, findings, await play_listing(run.app.package_name if run.app else None))
     facts = {
         "app": report.get("app") or {"apk": run.apk_name},
         "score_out_of_100": report.get("score"),

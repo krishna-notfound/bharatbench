@@ -27,7 +27,8 @@ async def _load(run_id: str) -> tuple[RunService, Run]:
 @router.get("/{run_id}/play-risk")
 async def play_risk(run_id: str) -> dict[str, Any]:
     service, run = await _load(run_id)
-    return insights.assess_play_risk(run, await service.list_findings(run_id))
+    on_play = await insights.play_listing(run.app.package_name if run.app else None)
+    return insights.assess_play_risk(run, await service.list_findings(run_id), on_play)
 
 
 @router.get("/{run_id}/compare")

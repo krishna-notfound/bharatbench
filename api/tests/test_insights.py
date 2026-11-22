@@ -7,6 +7,7 @@ import respx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app import insights
 from app.models import AppInfo, Evidence, Finding, Run, RunSummary
 from app.routes import insights as routes
 from app.settings import get_settings
@@ -54,8 +55,20 @@ def make_client(monkeypatch: pytest.MonkeyPatch, runs: list[Run], findings: dict
     return TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def _no_play_network(monkeypatch):
+    async def unknown(_pkg):
+        return None
+
+    monkeypatch.setattr(insights, "play_listing", unknown)
+
+
 # ---- play risk
-def risk(monkeypatch, run, findings):
+def risk(monkeypatch, run, findings, on_play=None):
+    async def fake_listing(_pkg):
+        return on_play
+
+    monkeypatch.setattr(insights, "play_listing", fake_listing)
     c = make_client(monkeypatch, [run], {run.id: findings})
     r = c.get(f"/api/runs/{run.id}/play-risk")
     assert r.status_code == 200
@@ -171,3 +184,20 @@ def test_brief_rejects_bad_language_and_unfinished(monkeypatch, sarvam_key):
     assert c.post("/api/runs/a/brief", json={"language": "xx-YY"}).status_code == 422
     c2 = make_client(monkeypatch, [mk_run("a", status="running")], {})
     assert c2.post("/api/runs/a/brief", json={"language": "auto"}).status_code == 409
+
+
+def test_not_on_play_store_never_claims_play_limits_apply(monkeypatch):
+    body = risk(monkeypatch, mk_run("a"), [], on_play=False)
+    assert body["on_play_store"] is False
+    assert "not on Google Play" in body["headline"] and "only apply once you publish" in body["headline"]
+    assert "Low risk" not in body["headline"]
+
+
+def test_on_play_store_mentions_play_limits(monkeypatch):
+    body = risk(monkeypatch, mk_run("a"), [mk_finding("f1", "rt.anr", "a", "budget_2gb")], on_play=True)
+    assert body["on_play_store"] is True and "is on Google Play" in body["headline"]
+
+
+def test_low_names_the_conditions_actually_tested(monkeypatch):
+    body = risk(monkeypatch, mk_run("a"), [], on_play=None)
+    assert body["tested_conditions"] and "No crashes or freezes seen" in body["headline"]

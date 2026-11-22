@@ -9,6 +9,9 @@ export interface PlayRisk {
   headline: string;
   reasons: { finding_id: string; text: string }[];
   thresholds: { crash_rate_pct: number; anr_rate_pct: number };
+  /** true / false from a real Google Play lookup of the package; null when it could not be checked. */
+  on_play_store?: boolean | null;
+  tested_conditions?: string[];
 }
 
 export interface CompareItem {

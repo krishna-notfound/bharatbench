@@ -21,7 +21,7 @@ import {
 const LEVEL_STYLE: Record<PlayRiskLevel, { label: string; pill: string }> = {
   high: { label: "High risk", pill: "bg-sev-critical/10 text-sev-critical ring-sev-critical/30" },
   medium: { label: "Medium risk", pill: "bg-sev-medium/10 text-sev-medium ring-sev-medium/30" },
-  low: { label: "Low risk", pill: "bg-success/10 text-success ring-success/30" },
+  low: { label: "No crashes seen", pill: "bg-success/10 text-success ring-success/30" },
   unknown: { label: "Not tested", pill: "bg-muted text-muted-foreground ring-foreground/10" },
 };
 
@@ -32,7 +32,7 @@ function PlayRiskCard({ risk, onSelectFinding }: { risk: PlayRisk; onSelectFindi
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <ShieldAlert className="size-4 text-primary" />
-          Play Store risk
+          {risk.on_play_store ? "Play Store risk" : "Stability on our test phone"}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -65,8 +65,11 @@ function PlayRiskCard({ risk, onSelectFinding }: { risk: PlayRisk; onSelectFindi
           </ul>
         )}
         <p className="text-xs text-muted-foreground">
-          Google Play limits: {risk.thresholds.anr_rate_pct}% ANR, {risk.thresholds.crash_rate_pct}% crash. We
-          measured a lab run, not your real-user rate.
+          {risk.on_play_store
+            ? `Live on Google Play. Play's limits: ${risk.thresholds.anr_rate_pct}% ANR, ${risk.thresholds.crash_rate_pct}% crash rate of users. This is a lab run, not your real-user rate.`
+            : risk.on_play_store === false
+              ? "Not found on Google Play, so Play's limits don't apply yet. This is what our test phone observed."
+              : "This is what our test phone observed; we couldn't check Google Play for this app."}
         </p>
       </CardContent>
     </Card>
