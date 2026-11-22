@@ -34,9 +34,9 @@ async def test_startup_resumes_running_run_with_same_id(make_service, fake_analy
     await _orphan(service, tmp_path)
     await service.bus.publish("old", "log", "Test phone job started", {"job_id": "jobX"})
     assert await service.recover_orphans() == 1
-    await asyncio.sleep(0.3)  # the pipeline is running again for the same run id
-    assert "old" in service._tasks
+    await asyncio.sleep(0.3)  # the pipeline ran again for the same run id (it may already have finished)
     events = await service.list_events("old")
+    assert any((e.data or {}).get("status") == "analyzing" for e in events), "pipeline was not restarted"
     assert any(e.message.startswith("The server was updated during this test") for e in events)
     assert h.cancelled
     assert (await service.get_run("old")).status != "failed"
