@@ -52,6 +52,7 @@ class Crawler:
         cancelled: Callable[[], bool] = lambda: False,
         sleep: Sleep = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
+        on_step: Callable[[HarnessStep], None] | None = None,
     ) -> None:
         self.adb = adb
         self.package = package
@@ -61,15 +62,23 @@ class Crawler:
         self.cancelled = cancelled
         self._sleep = sleep
         self._clock = clock
+        self._on_step = on_step
         self.j = Journey()
         self._launcher: str | None = None
 
     # ---- primitives ----
-    def _step(self, action: str, ok: bool, target: str | None = None, t0: float | None = None, note: str | None = None) -> None:
+    def _step(
+        self, action: str, ok: bool, target: str | None = None, t0: float | None = None, note: str | None = None,
+        xy: tuple[int, int] | None = None,
+    ) -> None:  # fmt: skip
         ms = int((self._clock() - t0) * 1000) if t0 is not None else None
-        self.j.steps.append(
-            HarnessStep(index=len(self.j.steps), action=action, target=target, ok=ok, duration_ms=ms, note=note)  # type: ignore[arg-type]
-        )
+        step = HarnessStep(
+            index=len(self.j.steps), action=action, target=target, ok=ok, duration_ms=ms, note=note,  # type: ignore[arg-type]
+            x=xy[0] if xy else None, y=xy[1] if xy else None,
+        )  # fmt: skip
+        self.j.steps.append(step)
+        if self._on_step is not None:
+            self._on_step(step)
 
     async def dump_ui(self) -> str:
         rc, _, _ = await self.adb.shell("uiautomator", "dump", UI_REMOTE, timeout=30)
@@ -97,6 +106,8 @@ class Crawler:
         self.j.screens.append(
             HarnessScreen(index=index, screenshot=shot_rel, ui_dump=ui_rel, activity=await self.foreground(), note=note)
         )
+        if self.j.steps and self.j.steps[-1].screen is None:
+            self.j.steps[-1].screen = index
 
     async def _settle(self, prev_hash: str | None = None) -> str:
         """Wait for the UI to stop changing (up to 3 s); return the latest dump."""
@@ -172,7 +183,7 @@ class Crawler:
                 tapped.add(f"{node.label}{node.bounds}")
                 cx, cy = node.center
                 rc, _, _ = await self.adb.shell("input", "tap", str(cx), str(cy), timeout=15)
-                self._step("tap", rc == 0, node.label, t0)
+                self._step("tap", rc == 0, node.label, t0, xy=(cx, cy))
             else:
                 rc, _, _ = await self.adb.shell("input", "keyevent", "KEYCODE_BACK", timeout=15)
                 self._step("back", rc == 0, "KEYCODE_BACK", t0, "nothing clickable")

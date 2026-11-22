@@ -13,6 +13,7 @@ from . import evidence
 from .adb import Adb
 from .crawler import Crawler, Sleep
 from .heal import DeviceDoctor
+from .live import LiveState
 from .models import (
     HarnessJob,
     HarnessJobRequest,
@@ -63,6 +64,7 @@ class JobRunner:
         self._active: str | None = None
         self._tasks: set[asyncio.Task[None]] = set()
         self.doctor = DeviceDoctor(settings, adb, sleep, clock, disk_probe)
+        self.live: dict[str, LiveState] = {}
         self._cleartext: dict[str, tuple[list[tuple[str, str, str]] | None, str | None]] = {}
 
     # ---- health ----
@@ -113,6 +115,7 @@ class JobRunner:
         job = HarnessJob(job_id=uuid.uuid4().hex, run_id=req.run_id, status="queued")
         self._active = job.job_id
         self.jobs[job.job_id] = job
+        self.live[job.job_id] = LiveState()
         d = self.job_dir(job.job_id)
         d.mkdir(parents=True, exist_ok=True)
         return job, d
@@ -124,6 +127,7 @@ class JobRunner:
 
     def abort_start(self, job: HarnessJob) -> None:
         self.jobs.pop(job.job_id, None)
+        self.live.pop(job.job_id, None)
         self._active = None
 
     def cancel(self, job_id: str) -> HarnessJob | None:
@@ -144,6 +148,7 @@ class JobRunner:
         self.jobs.pop(job_id, None)
         self.results.pop(job_id, None)
         self._cancel.discard(job_id)
+        self.live.pop(job_id, None)
         return True
 
     def _event(self, job: HarnessJob, msg: str) -> None:
@@ -153,6 +158,9 @@ class JobRunner:
     # ---- execution ----
     async def _execute(self, job: HarnessJob, req: HarnessJobRequest) -> None:
         job.status = "running"
+        live = self.live.setdefault(job.job_id, LiveState())
+        if self.settings.live_enabled:
+            live.start(self.adb)
         profiles: list[HarnessProfileResult] = []
         security: list[HarnessSecurityCheck] = []
         try:
@@ -167,6 +175,7 @@ class JobRunner:
             log.exception("job failed")
             job.status, job.error = "failed", str(exc)[:300]
         finally:
+            await live.stop()
             await self._uninstall(job, req.package_name)
             job.current_profile = None
             version = await self._android_version()
@@ -208,6 +217,7 @@ class JobRunner:
             if job.job_id in self._cancel:
                 break
             job.current_profile = pid
+            self.live.setdefault(job.job_id, LiveState()).set_profile(pid)
             self._event(job, f"profile {pid}: start")
             out.append(await self._profile_with_recovery(job, req, pid))
             job.progress = (n + 1) / total
@@ -274,6 +284,7 @@ class JobRunner:
             crawler = Crawler(
                 self.adb, pkg, req.main_activity, d, pid,
                 cancelled=lambda: job.job_id in self._cancel, sleep=self._sleep, clock=self._clock,
+                on_step=self.live.setdefault(job.job_id, LiveState()).note_step,
             )  # fmt: skip
             try:
                 j = await crawler.run(req.journey_steps)

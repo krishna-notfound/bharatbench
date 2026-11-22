@@ -18,6 +18,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/shell/states";
 import { useFetch } from "@/components/shell/use-fetch";
 import { FindingsSection } from "@/components/findings/findings-section";
+import { LivePhone } from "@/components/live/live-phone";
+import { StepReplay } from "@/components/live/step-replay";
+import { ReportInsights } from "@/components/report/report-insights";
 import { ScorePanel } from "@/components/runs/score-panel";
 import { ActivityLog, CompactSteps } from "@/components/runs/timeline";
 import { cancelRun, getFindings, getRun, reportUrl } from "@/lib/api";
@@ -152,8 +155,11 @@ export function RunDetail({ runId }: { runId: string }) {
   const latest = stream.events.length > 0 ? stream.events[stream.events.length - 1].message : null;
   const runtimeSkipped = r.summary?.runtime_executed === false;
 
+  const liveActive = r.status === "provisioning" || r.status === "running";
+
   return (
     <div className="mx-auto max-w-5xl space-y-8 py-8 md:py-12">
+      {liveActive && <LivePhone runId={runId} active />}
       <div className="space-y-6">
         {back}
         <div className="flex flex-col items-center gap-4 text-center">
@@ -213,6 +219,8 @@ export function RunDetail({ runId }: { runId: string }) {
         </section>
       )}
 
+      {r.status === "done" && findings.data && <ReportInsights run={r} findings={findings.data} />}
+
       <FindingsSection
         runId={runId}
         findings={findings.data}
@@ -221,6 +229,8 @@ export function RunDetail({ runId }: { runId: string }) {
         onRetry={findings.reload}
         runActive={active}
       />
+
+      {TERMINAL_STATUSES.includes(r.status) && !runtimeSkipped && <StepReplay runId={runId} />}
 
       <ActivityLog events={stream.events} connected={stream.connected} finished={stream.finished} />
 

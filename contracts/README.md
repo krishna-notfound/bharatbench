@@ -90,3 +90,9 @@ the client stops and flushes playback immediately.
 
 Uploading an APK happens in the web UI (voice cannot attach files); `start_test` re-runs an already
 uploaded APK. Destructive tool `cancel_run` requires the user to have said cancel/stop explicitly.
+
+## 7. Live phone and step replay (f20, append-only)
+
+- Harness (token-protected): `GET /jobs/{id}/live` -> `{seq, ts, profile_id, step_index, action, target, tap:{x,y}|null, screen:{w,h}|null, running, has_frame}`; `GET /jobs/{id}/live.png` -> latest frame (404 until one exists). A ~1 fps `adb exec-out screencap -p` loop runs only while the job runs; only the latest frame is kept in memory.
+- `HarnessStep` gains optional `x`, `y` (tap point, device px) and `screen` (index into `screens` captured after the step).
+- API: `GET /api/runs/{id}/live` (proxy; `{running:false, reason}` when no active job), `GET /api/runs/{id}/live.png` (`Cache-Control: no-store`), `GET /api/runs/{id}/replay` -> `{run_id, profiles:[{profile_id, screen, steps}]}` read from `artifacts/{profile_id}/steps.json`, written by the pipeline after artifact download.

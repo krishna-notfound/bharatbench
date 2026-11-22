@@ -42,6 +42,9 @@ class HarnessStep(BaseModel):
     ok: bool
     duration_ms: int | None = None
     note: str | None = None
+    x: int | None = None  # tap point in device pixels (tap steps only)
+    y: int | None = None
+    screen: int | None = None  # index into `screens` captured right after this step
 
 
 class HarnessProfileResult(BaseModel):

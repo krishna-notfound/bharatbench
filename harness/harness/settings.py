@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     tcpdump_path: str = "/usr/bin/tcpdump"
     timeout_path: str = "/usr/bin/timeout"
     security_enabled: bool = True
+    live_enabled: bool = True
     security_timeout_s: int = 150
     jobs_dir: Path = Path("./jobs")
     adb_path: str = "adb"
