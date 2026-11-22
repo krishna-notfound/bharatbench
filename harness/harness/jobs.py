@@ -15,6 +15,7 @@ from . import evidence
 from .adb import Adb
 from .agent import drive, llm_ready
 from .crawler import Crawler, Sleep
+from .explorer import explore
 from .heal import DeviceDoctor
 from .inputs import InputBroker, run_unpaused
 from .live import LiveState
@@ -329,7 +330,17 @@ class JobRunner:
                 broker=self._broker(job),
             )  # fmt: skip
             try:
-                j = await crawler.run(req.journey_steps)
+                if cfg.explorer_enabled and llm_ready(cfg):
+                    live_state = self.live.setdefault(job.job_id, LiveState())
+                    async with httpx.AsyncClient() as llm_client:
+
+                        async def brain(c: Crawler, n: int) -> None:
+                            await explore(c, n, cfg, llm_client, live_state.set_caption, c.secrets)
+
+                        crawler.explorer = brain
+                        j = await crawler.run(req.journey_steps)
+                else:
+                    j = await crawler.run(req.journey_steps)
             except Exception as exc:  # noqa: BLE001 - a broken journey is evidence, not a job failure
                 j = crawler.j
                 self._event(job, f"profile {pid}: journey error: {exc}")

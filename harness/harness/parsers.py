@@ -36,6 +36,7 @@ class UiNode:
     password: bool = False
     hint: str = ""
     enabled: bool = True
+    scrollable: bool = False
 
     @property
     def editable(self) -> bool:
@@ -76,6 +77,7 @@ def parse_ui_nodes(xml_text: str) -> list[UiNode]:
                 password=el.get("password") == "true",
                 hint=el.get("hint", ""),
                 enabled=el.get("enabled", "true") != "false",
+                scrollable=el.get("scrollable") == "true",
             )
         )
     return nodes
