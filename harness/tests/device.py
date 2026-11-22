@@ -1,10 +1,17 @@
 """A tiny scripted fake Android device behind the adb Runner interface."""
 
+import re
+
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 32
 PKG = "com.example.shop"
 
 
-def make_xml(texts: list[str], clickables: list[str] | None = None, progress: bool = False) -> str:
+def make_xml(
+    texts: list[str],
+    clickables: list[str] | None = None,
+    progress: bool = False,
+    fields: list[dict] | None = None,
+) -> str:
     nodes = []
     y = 100
     for t in texts:
@@ -17,6 +24,13 @@ def make_xml(texts: list[str], clickables: list[str] | None = None, progress: bo
         nodes.append(
             f'<node text="{t}" resource-id="" class="android.widget.Button" content-desc="" '
             f'clickable="true" bounds="[0,{y}][500,{y + 50}]" />'
+        )
+        y += 60
+    for f in fields or []:  # {"rid","hint","text","password"}
+        nodes.append(
+            f'<node text="{f.get("text", "")}" resource-id="{f.get("rid", "")}" class="android.widget.EditText" '
+            f'content-desc="" clickable="true" password="{str(f.get("password", False)).lower()}" '
+            f'hint="{f.get("hint", "")}" enabled="true" bounds="[0,{y}][500,{y + 50}]" />'
         )
         y += 60
     if progress:
@@ -44,6 +58,18 @@ class FakeDevice:
         self.killed = False
         self.change_after_dumps: int | None = None
         self._dumps = 0
+        self.keyboard = False
+        self.keyboard_on_type = True
+        self.typed: list[str] = []
+
+    def _tapped_field(self, cmd: str) -> bool:
+        x, y = (int(v) for v in cmd.split()[-2:])
+        pat = r'class="android.widget.EditText"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"'
+        for m in re.finditer(pat, self.screens[self.idx]):
+            x1, y1, x2, y2 = (int(g) for g in m.groups())
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                return True
+        return False
 
     async def __call__(self, argv: list[str], timeout: float) -> tuple[int, bytes, bytes]:
         assert timeout > 0
@@ -70,20 +96,29 @@ class FakeDevice:
             return 0, b"1\n" if self.booted else b"\n", b""
         if "getprop ro.build.version.release" in s:
             return 0, b"14\n", b""
-        if "exec-out cat /sdcard/ui.xml" in s:
+        if "uiautomator dump" in s and "cat /sdcard/ui.xml" in s:
             self._dumps += 1
             if self.change_after_dumps and self._dumps == self.change_after_dumps:
                 self.idx = min(self.idx + 1, len(self.screens) - 1)
             return 0, self.screens[self.idx].encode(), b""
         if "exec-out screencap" in s:
             return 0, PNG, b""
+        if "mInputShown" in s:
+            return 0, (b"  mInputShown=true\n" if self.keyboard else b"  mInputShown=false\n"), b""
+        if "input text" in s:
+            self.typed.append(s.split("input text ", 1)[1])
+            self.keyboard = self.keyboard_on_type
+            return 0, b"", b""
+        if "KEYCODE_BACK" in s and self.keyboard:
+            self.keyboard = False
+            return 0, b"", b""
         if "ResumedActivity" in s:
             return 0, f"  mResumedActivity: ActivityRecord{{ab u0 {self.foreground} t1}}\n".encode(), b""
         if "resolve-activity" in s:
             return 0, f"priority=0\n  {PKG}/{self.launcher}\n".encode(), b""
         if "am start -W" in s:
             return 0, b"Status: ok\nTotalTime: 777\n", b""
-        if "input tap" in s:
+        if "input tap" in s and not self._tapped_field(s):
             self.idx = min(self.idx + 1, len(self.screens) - 1)
         if "am kill" in s:
             self.killed = True

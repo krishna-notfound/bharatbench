@@ -139,7 +139,7 @@ class HarnessScreen(BaseModel):
 
 class HarnessStep(BaseModel):
     index: int
-    action: Literal["launch", "tap", "back", "background", "kill", "restore", "wait", "toggle_network"]
+    action: Literal["launch", "tap", "back", "background", "kill", "restore", "wait", "toggle_network", "fill"]
     target: str | None = None  # text/resource-id/"x,y"
     ok: bool
     duration_ms: int | None = None

@@ -82,6 +82,8 @@ export function captionFor(action: string | null | undefined, target: string | n
       return "Killing the app";
     case "restore":
       return "Restarting app";
+    case "fill":
+      return target ? `Filling the ${target.replace(/_/g, " ")} field…` : "Filling a field…";
     case "toggle_network":
       return "Network dropped";
     case "wait":
