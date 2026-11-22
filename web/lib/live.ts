@@ -16,6 +16,25 @@ export interface LiveInfo {
   target?: string | null;
   tap?: { x: number; y: number } | null;
   screen?: { w: number; h: number } | null;
+  caption?: string | null;
+  waiting_for_input?: boolean;
+  input_request?: InputRequest | null;
+}
+
+export interface InputField {
+  key: string;
+  label: string;
+  kind: "username" | "email" | "phone" | "password" | "otp" | "pin" | "text" | string;
+  secret: boolean;
+}
+
+/** The agent's live question to the user (labels only; the answer is never echoed back). */
+export interface InputRequest {
+  request_id: string;
+  fields: InputField[];
+  reason: string;
+  timeout_s?: number;
+  started_at?: number;
 }
 
 export interface ReplayStep {
@@ -71,6 +90,23 @@ export const getReplay = (runId: string) => getJson<Replay>(`/api/runs/${enc(run
 export const liveFrameUrl = (runId: string, seq: number) =>
   `${API_URL}/api/runs/${enc(runId)}/live.png?s=${seq}`;
 
+/** Sends the user's answer (or a skip). Rejects with ApiError; values are never stored client-side. */
+export async function sendInput(
+  runId: string,
+  requestId: string,
+  values: Record<string, string>,
+  skip: boolean,
+): Promise<void> {
+  const token = await getAccessToken();
+  const res = await fetch(`${API_URL}/api/runs/${enc(runId)}/input`, {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ request_id: requestId, values, skip }),
+  });
+  if (!res.ok) throw new ApiError(`${res.status}`, res.status);
+}
+
 /** Short human caption for what the agent is doing on the phone. */
 export function captionFor(action: string | null | undefined, target: string | null | undefined): string | null {
   switch (action) {
@@ -95,6 +131,35 @@ export function captionFor(action: string | null | undefined, target: string | n
     default:
       return null;
   }
+}
+
+/** Blinks the tab title (and shows a notification if allowed) while the agent waits and the tab is hidden. */
+export function useNeedsAttention(active: boolean): void {
+  useEffect(() => {
+    if (!active || typeof document === "undefined") return;
+    const original = document.title;
+    let on = false;
+    const timer = setInterval(() => {
+      if (document.hidden) {
+        on = !on;
+        document.title = on ? "Action needed" : original;
+      } else {
+        on = false;
+        document.title = original;
+      }
+    }, 1000);
+    try {
+      if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+        new Notification("Action needed", { body: "The agent is waiting for your input on the test phone." });
+      }
+    } catch {
+      /* notifications are optional */
+    }
+    return () => {
+      clearInterval(timer);
+      document.title = original;
+    };
+  }, [active]);
 }
 
 /** Polls the live endpoint every second while `active`; the last value is kept after it stops. */

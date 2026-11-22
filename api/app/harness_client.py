@@ -64,6 +64,18 @@ class HarnessClient:
         resp.raise_for_status()
         return resp.content
 
+    async def send_input(self, job_id: str, request_id: str, values: dict[str, str], skip: bool) -> bool:
+        """f24: hand the user's live answer to the harness. False = no matching open request. Never logged."""
+        resp = await self._client.post(
+            f"/jobs/{job_id}/input",
+            json={"request_id": request_id, "values": values, "skip": skip},
+            timeout=httpx.Timeout(8.0, connect=3.0),
+        )
+        if resp.status_code == 409:
+            return False
+        resp.raise_for_status()
+        return True
+
     async def delete(self, job_id: str) -> None:
         """Remove a finished job's artifacts from the harness disk (404 = already gone)."""
         resp = await self._client.delete(f"/jobs/{job_id}")

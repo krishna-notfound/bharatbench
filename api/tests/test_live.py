@@ -2,6 +2,7 @@
 
 import struct
 from types import SimpleNamespace
+from typing import ClassVar
 
 import httpx
 import pytest
@@ -127,3 +128,48 @@ async def test_pipeline_download_writes_steps(tmp_path):
     assert (tmp_path / "baseline" / "steps.json").is_file()
     assert out.profiles[0].steps[1].screen == 1
 
+
+
+# ---- f24: human-in-the-loop input ----
+class FakeInput(FakeLive):
+    sent: ClassVar[list] = []
+
+    async def live(self, job_id):
+        d = await super().live(job_id)
+        d.update(waiting_for_input=True, input_request={"request_id": "q1", "fields": [{"key": "email", "label": "Email", "kind": "email", "secret": False}]})
+        return d
+
+    async def send_input(self, job_id, request_id, values, skip):
+        FakeInput.sent.append((job_id, request_id, values, skip))
+        return request_id == "q1"
+
+
+def test_live_passes_input_request_through(stub):
+    c, svc, _, _ = stub
+    svc._harness_factory = lambda: FakeInput()
+    body = c.get("/api/runs/r1/live").json()
+    assert body["waiting_for_input"] and body["input_request"]["request_id"] == "q1"
+
+
+def test_input_forwarded_validated_and_never_stored(stub):
+    c, svc, _, _ = stub
+    FakeInput.sent = []
+    svc._harness_factory = lambda: FakeInput()
+    published = []
+
+    async def publish(run_id, kind, msg, data=None):
+        published.append(msg)
+
+    svc.bus = SimpleNamespace(publish=publish)
+    pw = "Sup3rSecret!"
+    r = c.post("/api/runs/r1/input", json={"request_id": "q1", "values": {"password": pw}})
+    assert r.status_code == 200 and FakeInput.sent == [("job1", "q1", {"password": pw}, False)]
+    assert published == ["You filled 1 field (hidden)"] and pw not in "".join(published)
+    assert c.post("/api/runs/r1/input", json={"request_id": "q1", "skip": True}).status_code == 200
+    assert published[-1] == "Skipped"
+    assert c.post("/api/runs/r1/input", json={"request_id": "old", "values": {"a": "b"}}).status_code == 409
+    big = c.post("/api/runs/r1/input", json={"request_id": "q1", "values": {"a": "x" * 500 + pw}})
+    assert big.status_code == 422 and pw not in big.text
+    assert c.post("/api/runs/r1/input", json={"request_id": "q1", "values": {}}).status_code == 422
+    assert c.post("/api/runs/r2/input", json={"request_id": "q1", "values": {"a": "b"}}).status_code == 503
+    assert c.post("/api/runs/nope/input", json={"request_id": "q1", "skip": True}).status_code == 404

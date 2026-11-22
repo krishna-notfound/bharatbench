@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from .adb import Adb, Runner, subprocess_runner
 from .jobs import Busy, JobRunner
@@ -22,6 +22,12 @@ from .settings import Settings, load_settings
 
 JOB_ID = re.compile(r"[0-9a-f]{32}")
 PACKAGE = re.compile(r"[A-Za-z][\w]*(\.[A-Za-z][\w]*)+")
+
+
+class InputAnswer(BaseModel):
+    request_id: str = Field(max_length=64)
+    values: dict[str, str] = Field(default_factory=dict, max_length=8)
+    skip: bool = False
 
 
 def create_app(settings: Settings | None = None, runner: Runner = subprocess_runner) -> FastAPI:
@@ -99,6 +105,15 @@ def create_app(settings: Settings | None = None, runner: Runner = subprocess_run
         if state is None:
             return {"seq": 0, "running": False, "has_frame": False, "tap": None, "screen": None}
         return state.public()
+
+    @app.post("/jobs/{job_id}/input")
+    async def answer_input(job_id: str, body: InputAnswer) -> dict[str, object]:
+        get_job(job_id)
+        if any(len(k) > 40 or len(v) > 200 for k, v in body.values.items()):
+            raise HTTPException(status_code=422, detail="input too long")
+        if not jobs.submit_input(job_id, body.request_id, body.values, body.skip):
+            raise HTTPException(status_code=409, detail="no matching input request")
+        return {"ok": True}
 
     @app.get("/jobs/{job_id}/live.png")
     async def live_png(job_id: str) -> Response:

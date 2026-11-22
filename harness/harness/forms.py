@@ -27,6 +27,15 @@ FIELD_VALUES: dict[str, str] = {
     "text": "test",
 }
 SECRET_KINDS = frozenset({"password", "pin", "otp"})
+# Kinds only the user can supply (f24): the crawler asks for these live unless a test account already covers them.
+ASK_LABELS: dict[str, str] = {
+    "username": "Username or login ID",
+    "email": "Email",
+    "phone": "Phone number",
+    "password": "Password",
+    "otp": "One-time code (OTP)",
+    "pin": "PIN",
+}
 
 # Order matters: first match wins.
 _RULES: list[tuple[str, re.Pattern[str]]] = [
@@ -98,6 +107,9 @@ class FormField:
     def real_value(self, secrets: "Secrets | None") -> tuple[str, bool]:
         """(value to type, True when it is a real test-account value that must stay hidden)."""
         if secrets is not None:
+            mine = secrets.user_value(self.kind)
+            if mine:
+                return mine, True
             if self.kind == "password" and secrets.password:
                 return secrets.password, True
             if self.kind == "otp" and secrets.otp:

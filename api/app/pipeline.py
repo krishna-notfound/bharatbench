@@ -359,7 +359,7 @@ async def _run_harness(
         run = await _set_status(storage, bus, run, "running")
         seen_events = 0
         last_profile = None
-        started = last_change = last_ok = time.monotonic()
+        started = last_change = last_ok = last_poll_at = time.monotonic()
         signature: tuple[Any, ...] = ()
         while True:
             try:
@@ -397,6 +397,15 @@ async def _run_harness(
                     await _salvage(client, bus, run.id, job_id, art_dir),
                 )
             now = time.monotonic()
+            if now - last_change > 20 and hasattr(client, "live"):
+                # f24: a run waiting for the user's answer is progressing, not stalled
+                try:
+                    if (await client.live(job_id)).get("waiting_for_input"):
+                        last_change = now
+                        started += now - last_poll_at
+                except (httpx.HTTPError, OSError, AttributeError):
+                    pass
+            last_poll_at = now
             sig = (job.progress, len(job.events), job.current_profile, job.status)
             if sig != signature:
                 signature, last_change = sig, now
