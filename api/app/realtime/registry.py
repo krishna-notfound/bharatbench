@@ -25,6 +25,8 @@ LABELS = {
     "run_deeper_tests": "Starting deeper tests",
     "get_finding_evidence": "Looking at the evidence",
     "compare_runs": "Comparing the two runs",
+    "plan_tests": "Deciding which tests to run",
+    "start_planned_test": "Starting the planned tests",
 }
 
 TOOL_SCHEMAS = voice_tools.TOOL_SCHEMAS
