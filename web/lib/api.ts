@@ -1,3 +1,4 @@
+import type { TestAccount } from "@/lib/account";
 import { getAccessToken } from "@/lib/supabase/client";
 import type {
   Finding,
@@ -100,6 +101,7 @@ export function createRun(
   file: File,
   profiles: ProfileId[],
   onProgress?: (pct: number) => void,
+  account?: TestAccount,
 ): Promise<Run> {
   return authHeaders().then((headers) => new Promise<Run>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -128,6 +130,7 @@ export function createRun(
     const form = new FormData();
     form.append("apk", file);
     form.append("profiles", profiles.join(","));
+    if (account) form.append("credentials", JSON.stringify(account));
     xhr.send(form);
   }));
 }

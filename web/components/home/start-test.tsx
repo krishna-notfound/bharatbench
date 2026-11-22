@@ -15,9 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { CARD, PRIMARY_CTA } from "@/components/shell/surface";
 import { createRun } from "@/lib/api";
+import { TestAccountSection, EMPTY_ACCOUNT, accountPayload } from "@/components/upload/test-account";
 import { formatBytes } from "@/lib/format";
 import { importRun, looksLikeGithubRepo } from "@/lib/import";
 import type { ProfileId } from "@/lib/types";
+import type { TestAccount } from "@/lib/account";
 import { cn } from "@/lib/utils";
 
 const MAX_BYTES = 200 * 1024 * 1024;
@@ -28,6 +30,7 @@ export function StartTest() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [account, setAccount] = useState<TestAccount>(EMPTY_ACCOUNT);
   const [fileError, setFileError] = useState<string | null>(null);
   const [repo, setRepo] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -63,8 +66,8 @@ export function StartTest() {
     setProgress(file ? 0 : null);
     try {
       const run = file
-        ? await createRun(file, DEFAULT_PROFILES, setProgress)
-        : await importRun(repo.trim(), DEFAULT_PROFILES);
+        ? await createRun(file, DEFAULT_PROFILES, setProgress, accountPayload(account))
+        : await importRun(repo.trim(), DEFAULT_PROFILES, accountPayload(account));
       router.push(`/runs/${run.id}`);
     } catch (e) {
       toast.error(
@@ -217,6 +220,8 @@ export function StartTest() {
           {file && <Progress value={progress ?? 0} />}
         </div>
       )}
+
+      <TestAccountSection value={account} onChange={setAccount} disabled={busy} />
 
       <div className="flex flex-col items-center gap-2">
         <button

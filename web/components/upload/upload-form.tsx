@@ -24,9 +24,11 @@ import {
   ProfileList,
 } from "@/components/upload/profile-list";
 import { createRun, getProfiles } from "@/lib/api";
+import { TestAccountSection, EMPTY_ACCOUNT, accountPayload } from "@/components/upload/test-account";
 import { importRun, looksLikeGithubRepo } from "@/lib/import";
 import { formatBytes } from "@/lib/format";
 import type { ProfileId } from "@/lib/types";
+import type { TestAccount } from "@/lib/account";
 import { cn } from "@/lib/utils";
 
 const MAX_BYTES = 200 * 1024 * 1024;
@@ -130,6 +132,7 @@ export function UploadForm() {
   const [dragging, setDragging] = useState(false);
   const [picked, setPicked] = useState<Set<ProfileId> | null>(null);
   const [advanced, setAdvanced] = useState(false);
+  const [account, setAccount] = useState<TestAccount>(EMPTY_ACCOUNT);
   const [progress, setProgress] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const profiles = useFetch(getProfiles);
@@ -180,8 +183,8 @@ export function UploadForm() {
         .filter((id) => selected.has(id) || id === "baseline");
       const run =
         fromRepo || !file
-          ? await importRun(repo.trim(), ids)
-          : await createRun(file, ids, setProgress);
+          ? await importRun(repo.trim(), ids, accountPayload(account))
+          : await createRun(file, ids, setProgress, accountPayload(account));
       toast.success(
         fromRepo
           ? "Got the APK from GitHub. I've started your test."
@@ -466,6 +469,7 @@ export function UploadForm() {
                 {source !== "repo" && <Progress value={progress ?? 0} />}
               </div>
             )}
+            <TestAccountSection value={account} onChange={setAccount} disabled={submitting} />
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
               <button
                 type="button"

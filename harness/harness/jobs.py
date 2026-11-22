@@ -29,6 +29,7 @@ from .models import (
     ProfileId,
 )
 from .profiles import ProfileError, ProfileManager
+from .secrets import Secrets
 from .security import (
     CleartextCapture,
     DeviceAudit,
@@ -40,6 +41,18 @@ from .security import (
 from .settings import Settings
 
 log = logging.getLogger("harness.jobs")
+
+LOGIN_TEST = AgentTest(
+    id="login_first", title="Log in with the test account", condition="baseline",
+    goal="Log in with the test account (skip any onboarding or permission screens first).",
+    success_check="A logged-in home screen is visible (no login form).",
+)  # fmt: skip
+OFFLINE_TEST = AgentTest(
+    id="offline_after_login", title="Keep using the app on a bad network after logging in", condition="flaky_network",
+    goal="The phone now has a very poor, dropping network. Keep using the app: open two or three screens and "
+    "refresh or load content. Report what breaks (stuck spinner, blank screen, crash, no error message).",
+    success_check="The app stays usable and shows clear errors or cached content; no crash or endless loading.",
+)  # fmt: skip
 
 
 class Busy(Exception):
@@ -229,7 +242,7 @@ class JobRunner:
             out.append(await self._profile_with_recovery(job, req, pid))
             job.progress = (n + 1) / total
             self._event(job, f"profile {pid}: done")
-        if job.job_id not in self._cancel and req.agent_tests:
+        if job.job_id not in self._cancel and (req.agent_tests or self._offline_wanted(req)):
             await self._agent_tests(job, req, agent)
         if job.job_id not in self._cancel and out:
             await self._security(job, req, security)
@@ -293,7 +306,7 @@ class JobRunner:
             crawler = Crawler(
                 self.adb, pkg, req.main_activity, d, pid,
                 cancelled=lambda: job.job_id in self._cancel, sleep=self._sleep, clock=self._clock,
-                on_step=self.live.setdefault(job.job_id, LiveState()).note_step,
+                on_step=self.live.setdefault(job.job_id, LiveState()).note_step, secrets=Secrets(req.credentials),
             )  # fmt: skip
             try:
                 j = await crawler.run(req.journey_steps)
@@ -327,17 +340,26 @@ class JobRunner:
 
 
     # ---- agent-written tests (f23) ----
+    @staticmethod
+    def _offline_wanted(req: HarnessJobRequest) -> bool:
+        sec = Secrets(req.credentials)
+        return sec.available and sec.offline_after_login
+
     async def _agent_tests(self, job: HarnessJob, req: HarnessJobRequest, out: list[HarnessAgentTestResult]) -> None:
         cfg = self.settings
         if not llm_ready(cfg):
             self._event(job, "agent tests skipped: no LLM key configured on the test phone host")
+            skipped = "Skipped: the test phone host has no LLM key (set LLM_API_KEY in harness/.env)."
             out.extend(
-                HarnessAgentTestResult(
-                    id=t.id, title=t.title, condition=t.condition,
-                    reason="Skipped: the test phone host has no LLM key (set LLM_API_KEY in harness/.env).",
-                )
+                HarnessAgentTestResult(id=t.id, title=t.title, condition=t.condition, reason=skipped)
                 for t in req.agent_tests
-            )  # fmt: skip
+            )
+            if self._offline_wanted(req):
+                out.append(
+                    HarnessAgentTestResult(
+                        id=OFFLINE_TEST.id, title=OFFLINE_TEST.title, condition="flaky_network", reason=skipped
+                    )
+                )
             return
         live = self.live.setdefault(job.job_id, LiveState())
         async with httpx.AsyncClient() as client:
@@ -359,6 +381,55 @@ class JobRunner:
                     )
                 out.append(res)
                 self._event(job, f"agent test '{t.title}': {'passed' if res.passed else 'failed' if res.passed is False else 'not judged'}")
+            if self._offline_wanted(req) and job.job_id not in self._cancel:
+                out.append(await self._offline_after_login(job, req, client, live))
+
+    async def _offline_after_login(
+        self, job: HarnessJob, req: HarnessJobRequest, client: httpx.AsyncClient, live: LiveState
+    ) -> HarnessAgentTestResult:
+        """Log in on baseline, then drop to a flaky network and keep using the app, recording what breaks."""
+        cfg = self.settings
+        sec = Secrets(req.credentials)
+        pm = ProfileManager(self.adb, self._sleep, cfg.device_kind, tc=cfg.tc_path, ip=cfg.ip_path, sudo=cfg.sudo_path)
+        pkg = req.package_name
+        live.set_profile(f"agent_{OFFLINE_TEST.id}")
+        self._event(job, "offline-after-login phase: logging in on baseline")
+        failed = HarnessAgentTestResult(id=OFFLINE_TEST.id, title=OFFLINE_TEST.title, condition="flaky_network")
+        applied = False
+        try:
+            await self.adb.shell("am", "force-stop", pkg, timeout=20)
+            await self.adb.shell("pm", "clear", pkg, timeout=30)
+            crawler = Crawler(
+                self.adb, pkg, req.main_activity, self.job_dir(job.job_id), f"agent_{OFFLINE_TEST.id}",  # type: ignore[arg-type]
+                cancelled=lambda: job.job_id in self._cancel, sleep=self._sleep, clock=self._clock,
+                on_step=live.note_step, secrets=sec,
+            )  # fmt: skip
+            login = await asyncio.wait_for(
+                drive(crawler, LOGIN_TEST, cfg, client, live.set_caption, secrets=sec), cfg.agent_test_timeout_s
+            )
+            if login.passed is not True:
+                failed.steps, failed.screens = login.steps, login.screens
+                failed.reason = f"Could not log in with the test account, so the offline phase did not run. {login.reason}"
+                return failed
+            self._event(job, "offline-after-login phase: logged in; dropping to a flaky network")
+            await pm.apply("flaky_network")
+            applied = True
+            return await asyncio.wait_for(
+                drive(crawler, OFFLINE_TEST, cfg, client, live.set_caption, secrets=sec, launch=False),
+                cfg.agent_test_timeout_s,
+            )
+        except TimeoutError:
+            failed.reason = "The offline phase took too long and was stopped; no verdict."
+            return failed
+        except Exception as exc:  # noqa: BLE001
+            failed.reason = f"The offline phase could not run ({type(exc).__name__})."
+            return failed
+        finally:
+            if applied:
+                try:
+                    await pm.revert("flaky_network")
+                except Exception as exc:  # noqa: BLE001
+                    self._event(job, f"offline phase: REVERT FAILED: {exc}")
 
     async def _agent_one(
         self, job: HarnessJob, req: HarnessJobRequest, t: AgentTest, client: httpx.AsyncClient, live: LiveState
@@ -378,9 +449,9 @@ class JobRunner:
             crawler = Crawler(
                 self.adb, pkg, req.main_activity, self.job_dir(job.job_id), f"agent_{t.id}",  # type: ignore[arg-type]
                 cancelled=lambda: job.job_id in self._cancel, sleep=self._sleep, clock=self._clock,
-                on_step=live.note_step,
+                on_step=live.note_step, secrets=Secrets(req.credentials),
             )  # fmt: skip
-            return await drive(crawler, t, cfg, client, live.set_caption)
+            return await drive(crawler, t, cfg, client, live.set_caption, secrets=Secrets(req.credentials))
         finally:
             try:
                 await pm.revert(t.condition)

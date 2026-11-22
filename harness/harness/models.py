@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 ProfileId = Literal[
     "baseline", "budget_2gb", "flaky_network", "low_storage", "battery_saver", "process_death"
@@ -24,6 +24,15 @@ class AgentTest(BaseModel):
     success_check: str
 
 
+class TestCredentials(BaseModel):
+    """Optional test account; in memory only, never persisted or logged (repr hidden)."""
+
+    login: str = Field("", max_length=200, repr=False)
+    password: str = Field("", max_length=200, repr=False)
+    note: str = Field("", max_length=300, repr=False)
+    offline_after_login: bool = False
+
+
 class HarnessJobRequest(BaseModel):
     run_id: str
     package_name: str
@@ -31,6 +40,7 @@ class HarnessJobRequest(BaseModel):
     profiles: list[ProfileId]
     journey_steps: int = 8
     agent_tests: list[AgentTest] = []  # f23, optional
+    credentials: TestCredentials | None = None  # f23, optional; never stored
 
 
 class HarnessCrash(BaseModel):

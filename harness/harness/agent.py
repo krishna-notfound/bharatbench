@@ -17,6 +17,7 @@ from .crawler import Crawler
 from .forms import adb_text
 from .models import AgentTest, HarnessAgentTestResult
 from .parsers import UiNode, is_denied, parse_ui_nodes, ui_hash
+from .secrets import Secrets
 from .settings import Settings
 
 log = logging.getLogger("harness.agent")
@@ -100,9 +101,17 @@ async def drive(
     settings: Settings,
     client: httpx.AsyncClient,
     caption: Callable[[str], None] = lambda _m: None,
+    *,
+    secrets: Secrets | None = None,
+    launch: bool = True,
 ) -> HarnessAgentTestResult:
-    """Run the goal loop on an already-conditioned device. Always returns a result, never raises."""
+    """Run the goal loop on an already-conditioned device. Always returns a result, never raises.
+
+    With a test account the model only sees <LOGIN>/<PASSWORD>/<OTP>; the real value is substituted at input time.
+    `launch=False` continues in the app that is already open (used after logging in)."""
     res = HarnessAgentTestResult(id=test.id, title=test.title, condition=test.condition)
+    sec = secrets or Secrets(None)
+    system = SYSTEM_PROMPT + (" " + sec.prompt_addendum() if sec.available else "")
 
     def finish(passed: bool | None, reason: str) -> HarnessAgentTestResult:
         res.passed, res.reason = passed, reason
@@ -110,26 +119,30 @@ async def drive(
         return res
 
     try:
-        if not await crawler.launch():
-            return finish(None, "The app did not launch, so this test could not be judged.")
-        xml = await crawler._settle()
-        await crawler._capture(xml, "after launch")
+        if launch:
+            if not await crawler.launch():
+                return finish(None, "The app did not launch, so this test could not be judged.")
+            xml = await crawler._settle()
+        else:
+            xml = await crawler.dump_ui()
+        await crawler._capture(xml, "after launch" if launch else "continuing")
         history: list[str] = []
         for _ in range(MAX_STEPS):
             if crawler.cancelled():
                 return finish(None, "Stopped before a verdict.")
             listing, nodes = render_nodes(parse_ui_nodes(xml))
+            listing = sec.tokenize(listing)
             user = (
                 f"Test: {test.title}\nGoal: {test.goal}\nSuccess check: {test.success_check}\n"
                 f"Previous actions: {'; '.join(history[-5:]) or 'none'}\nVisible UI:\n{listing or '(nothing visible)'}"
             )
             content = await ask_llm(
-                client, settings, [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}]
+                client, settings, [{"role": "system", "content": system}, {"role": "user", "content": user}]
             )
             act = parse_action(content, len(nodes)) if content is not None else None
             if act is None:
                 return finish(None, "The agent could not decide the next action (no usable answer from the model).")
-            kind, reason = act["action"], act["reason"]
+            kind, reason = act["action"], sec.mask(act["reason"])
             if kind == "done":
                 return finish(True, reason or "Success check met.")
             if kind == "fail":
@@ -145,22 +158,28 @@ async def drive(
                 cx, cy = node.center
                 if kind == "tap" and is_denied(node):
                     crawler._step("tap", False, node.label, t0, "skipped: unsafe action (pay/delete/logout)")
-                    history.append(f"refused to tap '{node.label}'")
+                    history.append(f"refused to tap '{sec.tokenize(node.label)}'")
                 else:
-                    caption(f"Agent: {'tapping' if kind == 'tap' else 'typing into'} '{node.label[:40]}' — {reason}")
+                    caption(f"Agent: {'tapping' if kind == 'tap' else 'typing into'} '{sec.mask(node.label[:40])}' — {reason}")
                     rc, _, _ = await crawler.adb.shell("input", "tap", str(cx), str(cy), timeout=15)
                     if kind == "fill" and rc == 0:
                         if node.text and node.text != node.hint:
                             await crawler.adb.shell(
                                 "input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * len(node.text)), timeout=15
                             )
-                        rc, _, _ = await crawler.adb.shell("input", "text", adb_text(act["text"][:80]), timeout=15)
-                        shown = "(masked)" if node.password else act["text"][:30]
-                        crawler._step("fill", rc == 0, node.label, t0, f"typed {shown}: {reason}", xy=(cx, cy))
-                        history.append(f"typed '{shown}' into '{node.label}'")
+                        wanted = act["text"][:80]
+                        used = sec.uses_secret(wanted)
+                        rc, _, _ = await crawler.adb.shell("input", "text", adb_text(sec.expand(wanted)), timeout=15)
+                        if used or node.password:  # the real value is substituted only in the line above
+                            label = "password" if node.password or "password" in used else used[0]
+                            crawler._step("fill", rc == 0, node.label, t0, f"Filling {label} (hidden): {reason}", xy=(cx, cy))
+                            history.append(f"typed {label} (hidden) into '{sec.tokenize(node.label)}'")
+                        else:
+                            crawler._step("fill", rc == 0, node.label, t0, f"typed {sec.mask(wanted[:30])}: {reason}", xy=(cx, cy))
+                            history.append(f"typed '{sec.mask(wanted[:30])}' into '{sec.tokenize(node.label)}'")
                     else:
                         crawler._step("tap", rc == 0, node.label, t0, reason, xy=(cx, cy))
-                        history.append(f"tapped '{node.label}'")
+                        history.append(f"tapped '{sec.tokenize(node.label)}'")
             prev = ui_hash(xml)
             xml = await crawler._settle(prev)
             xml = await crawler._recover_foreground(xml)

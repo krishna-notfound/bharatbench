@@ -2,8 +2,12 @@
 
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .parsers import UiNode, is_denied
+
+if TYPE_CHECKING:
+    from .secrets import Secrets
 
 # kind -> value typed into the field (deterministic test data, never real).
 FIELD_VALUES: dict[str, str] = {
@@ -12,6 +16,7 @@ FIELD_VALUES: dict[str, str] = {
     "otp": "123456",
     "pin": "1234",
     "password": "Test@12345",
+    "username": "asha_verma",
     "name": "Asha Verma",
     "pincode": "560001",
     "city": "Bengaluru",
@@ -29,6 +34,7 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
     ("otp", re.compile(r"\botp\b|one.?time|verification\s*code|\bcode\b|\bsms\s*code", re.IGNORECASE)),
     ("pincode", re.compile(r"pin\s*code|pincode|postal|zip", re.IGNORECASE)),
     ("pin", re.compile(r"\bpin\b|\bmpin\b|\bcvv\b", re.IGNORECASE)),
+    ("username", re.compile(r"user\s*(name|id)|\blogin\b", re.IGNORECASE)),
     ("email", re.compile(r"e.?mail", re.IGNORECASE)),
     ("phone", re.compile(r"phone|mobile|contact\s*(no|num)|\bmsisdn\b|\btel\b", re.IGNORECASE)),
     ("amount", re.compile(r"amount|\bprice\b|\bsum\b|\bqty\b|quantity|rupee|\binr\b|\bbudget\b", re.IGNORECASE)),
@@ -88,6 +94,23 @@ class FormField:
     @property
     def value(self) -> str:
         return FIELD_VALUES[self.kind]
+
+    def real_value(self, secrets: "Secrets | None") -> tuple[str, bool]:
+        """(value to type, True when it is a real test-account value that must stay hidden)."""
+        if secrets is not None:
+            if self.kind == "password" and secrets.password:
+                return secrets.password, True
+            if self.kind == "otp" and secrets.otp:
+                return secrets.otp, True
+            login = secrets.login
+            digits = re.sub(r"[\s+()-]", "", login)
+            if login and (
+                self.kind == "username"
+                or (self.kind == "email" and "@" in login)
+                or (self.kind == "phone" and digits.isdigit())
+            ):
+                return login, True
+        return self.value, False
 
     @property
     def key(self) -> str:

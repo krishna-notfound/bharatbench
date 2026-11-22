@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app import github_import as gh
 from app.auth.supabase import bearer_token, verify_token
 from app.conversations.store import get_conversation_store
-from app.models import Run
+from app.models import Run, TestCredentials
 from app.routes.runs import DEFAULT_PROFILES, parse_profiles
 from app.services import get_run_service
 from app.settings import Settings
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/api/runs")
 class ImportRequest(BaseModel):
     repo_url: str
     profiles: list[str] | None = None
+    credentials: TestCredentials | None = None
 
 
 @router.post("/import", status_code=201)
@@ -39,7 +40,7 @@ async def import_run(
             asset = await gh.find_apk(ref, token, client)
             await gh.download_apk(asset, tmp, token, client)
         service = get_run_service()
-        run = await service.create_run(str(tmp), asset.name, profile_ids)
+        run = await service.create_run(str(tmp), asset.name, profile_ids, credentials=body.credentials)
         await service.bus.publish(
             run.id, "log", f"Imported from github.com/{ref.owner}/{ref.repo} release {asset.release}"
         )

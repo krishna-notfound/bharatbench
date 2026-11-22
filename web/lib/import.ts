@@ -1,11 +1,13 @@
 import { API_URL, ApiError } from "@/lib/api";
 import { getAccessToken } from "@/lib/supabase/client";
 import type { ProfileId, Run } from "@/lib/types";
+import type { TestAccount } from "@/lib/account";
 
 /** Import the latest release APK of a GitHub repo and start a run (POST /api/runs/import). */
 export async function importRun(
   repoUrl: string,
   profiles?: ProfileId[],
+  account?: TestAccount,
 ): Promise<Run> {
   const token = await getAccessToken();
   let res: Response;
@@ -17,7 +19,7 @@ export async function importRun(
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ repo_url: repoUrl, profiles }),
+      body: JSON.stringify({ repo_url: repoUrl, profiles, credentials: account }),
     });
   } catch {
     throw new ApiError(`Cannot reach the API at ${API_URL}`, 0);

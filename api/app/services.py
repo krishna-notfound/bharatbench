@@ -8,8 +8,9 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app import pipeline as _pipeline
 from app.events import EventBus, EventSubscription
-from app.models import AgentTest, Finding, ProfileId, Run, RunEvent
+from app.models import AgentTest, Finding, ProfileId, Run, RunEvent, TestCredentials
 from app.pipeline import HarnessFactory, run_pipeline
 from app.storage.base import Storage
 
@@ -130,8 +131,11 @@ class RunServiceImpl:
         profile_ids: list[ProfileId],
         journey_steps: int | None = None,
         agent_tests: list[AgentTest] | None = None,
+        credentials: TestCredentials | None = None,
     ) -> Run:
         run_id = uuid.uuid4().hex[:12]
+        if credentials is not None and credentials.present:  # memory only, keyed by run id; dropped at the end
+            _pipeline.CREDENTIALS[run_id] = credentials
         dest = self.data_dir / "runs" / run_id / "app.apk"
         dest.parent.mkdir(parents=True, exist_ok=True)
         await asyncio.to_thread(shutil.copyfile, apk_path, dest)
@@ -180,7 +184,7 @@ class RunServiceImpl:
             )
         )
         self._tasks[run_id] = task
-        task.add_done_callback(lambda _t: self._tasks.pop(run_id, None))
+        task.add_done_callback(lambda _t: (self._tasks.pop(run_id, None), _pipeline.CREDENTIALS.pop(run_id, None)))
 
     async def get_run(self, run_id: str) -> Run | None:
         return await self.storage.get_run(run_id)

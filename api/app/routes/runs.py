@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 
 from app.auth.supabase import bearer_token, verify_token
 from app.conversations.store import get_conversation_store
-from app.models import Finding, ProfileId, Run, RunEvent
+from app.models import Finding, ProfileId, Run, RunEvent, TestCredentials
 from app.profiles import PROFILE_BY_ID, PROFILES
 from app.report import render_markdown
 from app.services import get_run_service
@@ -39,11 +39,22 @@ async def _require_run(run_id: str) -> Run:
     return run
 
 
+def parse_credentials(raw: str) -> TestCredentials | None:
+    """Optional `credentials` JSON form field; lengths validated, never echoed back or logged."""
+    if not raw.strip():
+        return None
+    try:
+        return TestCredentials.model_validate_json(raw)
+    except ValueError:
+        raise HTTPException(422, "Invalid test account (login/password up to 200 characters, note up to 300)") from None
+
+
 @router.post("", status_code=201)
 async def create_run(
     request: Request,
     apk: UploadFile,
     profiles: str = Form(DEFAULT_PROFILES),
+    credentials: str = Form(""),
     authorization: str | None = Header(default=None),
 ) -> Run:
     settings: Settings = request.app.state.settings
@@ -54,6 +65,7 @@ async def create_run(
     if not name.lower().endswith(".apk"):
         raise HTTPException(400, "Only .apk files are accepted")
     profile_ids = parse_profiles(profiles)
+    creds = parse_credentials(credentials)
 
     tmp_dir = settings.data_dir / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -70,7 +82,7 @@ async def create_run(
                 await out.write(chunk)
         if size == 0:
             raise HTTPException(400, "Uploaded file is empty")
-        run = await get_run_service().create_run(str(tmp), name, profile_ids)
+        run = await get_run_service().create_run(str(tmp), name, profile_ids, credentials=creds)
         if user is not None:
             await get_conversation_store().set_run_owner(run.id, user.id)
         return run

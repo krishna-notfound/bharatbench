@@ -128,6 +128,20 @@ class AgentTest(BaseModel):
     success_check: str
 
 
+class TestCredentials(BaseModel):
+    """Optional test account. Held in memory for the life of one run; never stored, logged or reported."""
+
+    __test__ = False
+    login: str = Field("", max_length=200, repr=False)
+    password: str = Field("", max_length=200, repr=False)
+    note: str = Field("", max_length=300, repr=False)
+    offline_after_login: bool = False
+
+    @property
+    def present(self) -> bool:
+        return bool(self.login.strip() or self.password)
+
+
 class HarnessJobRequest(BaseModel):
     run_id: str
     package_name: str
@@ -135,6 +149,7 @@ class HarnessJobRequest(BaseModel):
     profiles: list[ProfileId]
     journey_steps: int = 8
     agent_tests: list[AgentTest] = []  # f23, optional
+    credentials: TestCredentials | None = None  # f23, optional; never stored
 
 
 class HarnessCrash(BaseModel):

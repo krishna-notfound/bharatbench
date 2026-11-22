@@ -22,6 +22,7 @@ from .parsers import (
     ui_hash,
     visible_texts,
 )
+from .secrets import Secrets
 
 UI_REMOTE = "/sdcard/ui.xml"
 DUMP_CMD = f"uiautomator dump {UI_REMOTE} >/dev/null && cat {UI_REMOTE}"
@@ -58,6 +59,7 @@ class Crawler:
         sleep: Sleep = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
         on_step: Callable[[HarnessStep], None] | None = None,
+        secrets: Secrets | None = None,
     ) -> None:
         self.adb = adb
         self.package = package
@@ -68,6 +70,7 @@ class Crawler:
         self._sleep = sleep
         self._clock = clock
         self._on_step = on_step
+        self.secrets = secrets
         self.j = Journey()
         self._launcher: str | None = None
         self._cap_hash: str | None = None  # UI hash of the last captured screen
@@ -81,6 +84,9 @@ class Crawler:
         xy: tuple[int, int] | None = None,
     ) -> None:  # fmt: skip
         ms = int((self._clock() - t0) * 1000) if t0 is not None else None
+        if self.secrets is not None:  # never store a real test-account value in steps
+            target = self.secrets.mask(target) if target else target
+            note = self.secrets.mask(note) if note else note
         step = HarnessStep(
             index=len(self.j.steps), action=action, target=target, ok=ok, duration_ms=ms, note=note,  # type: ignore[arg-type]
             x=xy[0] if xy else None, y=xy[1] if xy else None,
@@ -130,7 +136,8 @@ class Crawler:
         ui_rel = None
         if xml:
             ui_rel = f"ui/{self.profile_id}_{index}.xml"
-            (self.job_dir / ui_rel).write_text(xml, encoding="utf-8")
+            stored = self.secrets.mask(xml) if self.secrets is not None else xml
+            (self.job_dir / ui_rel).write_text(stored, encoding="utf-8")
         self.j.screens.append(
             HarnessScreen(index=index, screenshot=shot_rel, ui_dump=ui_rel, activity=activity, note=note)
         )
@@ -212,10 +219,14 @@ class Crawler:
         rc, _, _ = await self.adb.shell("input", "tap", str(cx), str(cy), timeout=15)
         if rc == 0 and f.node.text and f.node.text != f.node.hint:  # stale text: move to end, then delete it
             await self.adb.shell("input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * len(f.node.text)), timeout=15)
+        value, real = f.real_value(self.secrets)
         if rc == 0:
-            rc, _, _ = await self.adb.shell("input", "text", adb_text(f.value), timeout=15)
+            rc, _, _ = await self.adb.shell("input", "text", adb_text(value), timeout=15)
         self._filled.add(f.key)
-        note = f"typed a test {f.kind}" + (" (value masked)" if f.kind in SECRET_KINDS else "")
+        if real:
+            note = f"Filling {'OTP' if f.kind == 'otp' else 'password' if f.kind == 'password' else 'login'} (hidden)"
+        else:
+            note = f"typed a test {f.kind}" + (" (value masked)" if f.kind in SECRET_KINDS else "")
         self._step("fill", rc == 0, f.kind, t0, note, xy=(cx, cy))
 
     async def _fill_form(self, xml: str) -> str | None:

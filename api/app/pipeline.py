@@ -30,6 +30,7 @@ from app.models import (
     HarnessResult,
     Run,
     RunStatus,
+    TestCredentials,
 )
 from app.scoring import score_findings, summarize
 from app.storage.base import Storage
@@ -130,6 +131,33 @@ async def _store_findings(storage: Storage, bus: EventBus, run_id: str, scored: 
         )
 
 
+# Test accounts of runs in flight (owned by RunServiceImpl). Memory only; dropped when the run ends.
+CREDENTIALS: dict[str, TestCredentials] = {}
+
+
+def _secret_values(run_id: str) -> list[str]:
+    c = CREDENTIALS.get(run_id)
+    if c is None:
+        return []
+    import re
+
+    vals = [c.password, c.login.strip(), c.note.strip(), *re.findall(r"\d{4,8}", c.note)]
+    return sorted({v for v in vals if len(v) >= 3}, key=len, reverse=True)
+
+
+def mask_secrets(run_id: str, text: str) -> str:
+    """Replace the run's test-account values with *** (raw and JSON-escaped forms)."""
+    for v in _secret_values(run_id):
+        text = text.replace(v, "***").replace(json.dumps(v)[1:-1], "***")
+    return text
+
+
+def _scrub_result(run_id: str, result: HarnessResult) -> HarnessResult:
+    if not _secret_values(run_id):
+        return result
+    return HarnessResult.model_validate_json(mask_secrets(run_id, result.model_dump_json()))
+
+
 def _artifact_refs(result: HarnessResult) -> list[tuple[str, str]]:
     """(profile_id, harness-relative path) for every artifact referenced by the result."""
     refs: list[tuple[str, str]] = []
@@ -152,6 +180,7 @@ async def _download_artifacts(
     client: HarnessLike, bus: EventBus, run_id: str, job_id: str, result: HarnessResult, art_dir: Path
 ) -> HarnessResult:
     """Download every artifact and rewrite refs to `{profile_id}/{file}`; undownloadable refs become None."""
+    result = _scrub_result(run_id, result)
     mapping: dict[tuple[str, str], str | None] = {}
     for profile_id, path in _artifact_refs(result):
         if (profile_id, path) in mapping:
@@ -306,6 +335,7 @@ async def _run_harness(
                     main_activity=run.app.main_activity,
                     profiles=run.profile_ids,
                     agent_tests=agent_tests or [],
+                    credentials=CREDENTIALS.get(run.id),
                     **({"journey_steps": min(journey_steps, 20)} if journey_steps else {}),
                 ),
             )
@@ -334,7 +364,7 @@ async def _run_harness(
                 continue
             last_ok = time.monotonic()
             for line in job.events[seen_events:]:
-                await bus.publish(run.id, "log", line)
+                await bus.publish(run.id, "log", mask_secrets(run.id, line))
             seen_events = len(job.events)
             if job.current_profile and job.current_profile != last_profile:
                 last_profile = job.current_profile
@@ -351,7 +381,7 @@ async def _run_harness(
                 partial = await _salvage(client, bus, run.id, job_id, art_dir)
                 raise _Skip(_stop_note(run.profile_ids, partial), partial)
             if job.status in ("failed", "cancelled"):
-                detail = job.error or "no detail"
+                detail = mask_secrets(run.id, job.error or "no detail")
                 raise _Skip(
                     f"The test lab could not finish this run ({detail}). Static results are below.",
                     await _salvage(client, bus, run.id, job_id, art_dir),
