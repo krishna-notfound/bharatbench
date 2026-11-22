@@ -24,6 +24,7 @@ import {
   ProfileList,
 } from "@/components/upload/profile-list";
 import { createRun, getProfiles } from "@/lib/api";
+import { importRun, looksLikeGithubRepo } from "@/lib/import";
 import { formatBytes } from "@/lib/format";
 import type { ProfileId } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -34,7 +35,7 @@ const DEFAULTS: ProfileId[] = ["budget_2gb", "flaky_network"];
 type Source = "repo" | "apk" | "link";
 
 const SOURCES: { id: Source; label: string; soon: boolean }[] = [
-  { id: "repo", label: "GitHub repo", soon: true },
+  { id: "repo", label: "GitHub repo", soon: false },
   { id: "apk", label: "Upload APK", soon: false },
   { id: "link", label: "APK link", soon: true },
 ];
@@ -124,6 +125,7 @@ export function UploadForm() {
   const [step, setStep] = useState<1 | 2>(1);
   const [source, setSource] = useState<Source>("apk");
   const [file, setFile] = useState<File | null>(null);
+  const [repo, setRepo] = useState("");
   const [fileError, setFileError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [picked, setPicked] = useState<Set<ProfileId> | null>(null);
@@ -167,15 +169,23 @@ export function UploadForm() {
   }
 
   async function submit() {
-    if (!file || selected.size === 0) return;
+    const fromRepo = source === "repo";
+    if ((fromRepo ? !repoOk : !file) || selected.size === 0) return;
     setSubmitting(true);
-    setProgress(0);
+    setProgress(fromRepo ? null : 0);
     try {
       const ids = all
         .map((p) => p.id)
         .filter((id) => selected.has(id) || id === "baseline");
-      const run = await createRun(file, ids, setProgress);
-      toast.success("Upload complete. I've started your test.");
+      const run =
+        fromRepo || !file
+          ? await importRun(repo.trim(), ids)
+          : await createRun(file, ids, setProgress);
+      toast.success(
+        fromRepo
+          ? "Got the APK from GitHub. I've started your test."
+          : "Upload complete. I've started your test.",
+      );
       router.push(`/runs/${run.id}`);
     } catch (e) {
       toast.error(
@@ -188,8 +198,10 @@ export function UploadForm() {
     }
   }
 
-  const canContinue = source === "apk" && !!file;
-  const canSubmit = !!file && selected.size > 0 && !submitting;
+  const repoOk = looksLikeGithubRepo(repo);
+  const repoTouched = repo.trim().length > 0;
+  const canContinue = source === "apk" ? !!file : source === "repo" && repoOk;
+  const canSubmit = canContinue && selected.size > 0 && !submitting;
 
   return (
     <div className="space-y-10">
@@ -202,7 +214,7 @@ export function UploadForm() {
         </h1>
         <p className="text-muted-foreground">
           {step === 1
-            ? "Upload an APK and I'll take it from here."
+            ? "Upload an APK or paste a GitHub link and I'll take it from here."
             : "Choose the kinds of trouble you want me to try."}
         </p>
       </header>
@@ -213,12 +225,37 @@ export function UploadForm() {
             <SourceTabs value={source} onChange={setSource} />
 
             {source === "repo" && (
-              <ComingSoon
-                icon={<GitBranch className="size-4" />}
-                label="GitHub repository"
-                placeholder="https://github.com/you/your-app"
-                copy="Repo builds are on the way. Upload an APK for now."
-              />
+              <div className="space-y-3 p-2">
+                <label
+                  htmlFor="repo-url"
+                  className="flex items-center gap-2 text-sm font-medium"
+                >
+                  <GitBranch className="size-4" />
+                  GitHub repository
+                </label>
+                <Input
+                  id="repo-url"
+                  value={repo}
+                  inputMode="url"
+                  autoComplete="off"
+                  placeholder="https://github.com/you/your-app"
+                  onChange={(e) => setRepo(e.target.value)}
+                  aria-invalid={repoTouched && !repoOk}
+                  className="h-12 rounded-full px-5"
+                />
+                <p
+                  className={cn(
+                    "text-sm",
+                    repoTouched && !repoOk
+                      ? "text-destructive"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {repoTouched && !repoOk
+                    ? "Use a link like github.com/owner/repo."
+                    : "I test the APK attached to the repo's latest release. Building from source is coming soon."}
+                </p>
+              </div>
             )}
             {source === "link" && (
               <ComingSoon
@@ -322,7 +359,9 @@ export function UploadForm() {
               <p className="text-sm text-muted-foreground">
                 {source === "apk"
                   ? "Choose an APK to continue."
-                  : "Switch to Upload APK to continue."}
+                  : source === "repo"
+                    ? "Paste a GitHub repository link to continue."
+                    : "Switch to Upload APK to continue."}
               </p>
             )}
           </div>
@@ -352,10 +391,12 @@ export function UploadForm() {
       ) : (
         <>
           <section className="space-y-4">
-            {file && (
+            {(source === "repo" || file) && (
               <p className="truncate text-center text-sm text-muted-foreground">
                 Testing{" "}
-                <span className="font-medium text-foreground">{file.name}</span>
+                <span className="font-medium text-foreground">
+                  {source === "repo" ? repo.trim() : file?.name}
+                </span>
               </p>
             )}
             {profiles.loading ? (
@@ -406,16 +447,22 @@ export function UploadForm() {
           </section>
 
           <div className="space-y-4">
-            {submitting && progress !== null && (
+            {submitting && (
               <div className="mx-auto max-w-md space-y-1.5" aria-live="polite">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <Loader2 className="size-3.5 animate-spin" />
-                    {progress < 100 ? "Uploading…" : "Getting started…"}
+                    {source === "repo"
+                      ? "Fetching the APK from GitHub…"
+                      : (progress ?? 0) < 100
+                        ? "Uploading…"
+                        : "Getting started…"}
                   </span>
-                  <span className="font-mono tabular-nums">{progress}%</span>
+                  {source !== "repo" && (
+                    <span className="font-mono tabular-nums">{progress}%</span>
+                  )}
                 </div>
-                <Progress value={progress} />
+                {source !== "repo" && <Progress value={progress ?? 0} />}
               </div>
             )}
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">

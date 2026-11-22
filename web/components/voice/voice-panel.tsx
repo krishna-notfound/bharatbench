@@ -39,7 +39,7 @@ export function VoicePanel() {
   const desktop = useIsDesktop();
   const router = useRouter();
   const pathname = usePathname();
-  const hidden = pathname === "/" || pathname === "/chat";
+  const hidden = pathname === "/chat"; // /chat already is the agent; the mini-orb stays on every other page, home included
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
@@ -48,7 +48,7 @@ export function VoicePanel() {
 
   useEffect(() => {
     const handler = () => {
-      if (hidden) return; // the home screen and /chat already are the agent
+      if (hidden) return; // /chat already is the agent
       connect();
       if (!window.matchMedia(DESKTOP_QUERY).matches) {
         router.push("/chat");
