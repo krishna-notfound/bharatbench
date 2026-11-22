@@ -103,7 +103,7 @@ async def test_ask_without_live_input_box_is_a_skip(tmp_path):
     c = await run(dev, tmp_path, llm, steps=3)
     assert "Human can answer 'ask': no" in llm.user(0)
     nxt = llm.user(1)
-    assert "No human can answer" in nxt or "look for Skip / Guest" in nxt
+    assert any(k in nxt for k in ("No human can answer", "look for Skip / Guest", "don't ask"))
     assert any(s.target == "Skip" for s in c.j.steps)
 
 
@@ -211,3 +211,27 @@ async def test_refilling_a_filled_field_is_skipped(tmp_path):
     assert not dev.typed  # never retyped
     assert "already filled" in llm.user(1)
     assert ["250", "185"] in taps(dev)  # the second repeat falls back to the untried "Next"
+
+
+async def test_never_taps_another_app_or_the_home_screen(tmp_path):
+    """If the phone shows another app (e.g. the launcher after a crash), no tap is sent there: the app comes back first."""
+    dev = FakeDevice([make_xml(["Home"], ["Open shop", "Cart"])])
+    llm = Scripted([{"action": "tap", "node": 1, "reason": "open shop"}, {"action": "done", "reason": "enough"}])
+    c = crawler(dev, tmp_path)
+    await c.launch()
+    dev.foreground = "com.android.launcher3/.Launcher"  # app crashed to the home screen
+    sent_before = sum("input tap" in " ".join(x) for x in dev.calls)
+    async with llm.client() as client:
+        await explore(c, 3, settings(), client, lambda _m: None, None)
+    first_tap = next(s for s in c.j.steps if s.target == "Open shop")
+    assert first_tap.ok is False and "not inside the app" in (first_tap.note or "")
+    assert dev.foreground.startswith("com.example.shop/")  # brought back
+    assert sum("input tap" in " ".join(x) for x in dev.calls) == sent_before  # nothing tapped on the launcher
+
+
+async def test_crawler_in_app_is_false_for_other_apps(tmp_path):
+    dev = FakeDevice([make_xml(["Home"], ["Go"])])
+    c = crawler(dev, tmp_path)
+    assert await c.in_app() is True
+    dev.foreground = "com.urbanjewells.app/.MainActivity"
+    assert await c.in_app() is False

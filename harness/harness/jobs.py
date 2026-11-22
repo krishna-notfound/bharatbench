@@ -56,6 +56,8 @@ OFFLINE_TEST = AgentTest(
     success_check="The app stays usable and shows clear errors or cached content; no crash or endless loading.",
 )  # fmt: skip
 
+_PKG_OK = re.compile(r"^[A-Za-z][\w]*(\.[A-Za-z][\w]*)+$")
+
 
 class Busy(Exception):
     pass
@@ -234,6 +236,17 @@ class JobRunner:
             self.doctor.installed.discard(package)
         self._event(job, f"uninstalled {package}" if rc == 0 else f"uninstall failed: {err.strip()[:100]}")
 
+    async def _remove_other_apps(self, job: HarnessJob, package: str) -> None:
+        """Only the app under test may exist on the phone: uninstall every other user-installed app."""
+        rc, out, _ = await self.adb.shell("pm", "list", "packages", "-3", timeout=30)
+        if rc != 0:
+            return
+        others = [ln.split(":", 1)[1].strip() for ln in out.splitlines() if ln.startswith("package:")]
+        for pkg in others:
+            if pkg and pkg != package and _PKG_OK.match(pkg):
+                await self.adb.shell("pm", "uninstall", pkg, timeout=60)
+                self._event(job, f"removed other app {pkg} so only the app under test is on the phone")
+
     async def _run(
         self, job: HarnessJob, req: HarnessJobRequest, out: list[HarnessProfileResult],
         security: list[HarnessSecurityCheck], agent: list[HarnessAgentTestResult] | None = None,
@@ -247,6 +260,7 @@ class JobRunner:
             raise RuntimeError(
                 "The test phone is not responding and could not be restarted automatically. Try again in a minute."
             )
+        await self._remove_other_apps(job, req.package_name)
         rc, stdout, stderr = await self.adb.run(["install", "-r", "-g", str(apk)], timeout=180)
         if rc != 0 or "Success" not in stdout:
             raise RuntimeError(f"adb install failed: {(stderr or stdout).strip()[:200]}")

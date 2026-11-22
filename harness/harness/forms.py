@@ -157,3 +157,24 @@ def pick_submit(nodes: list[UiNode], tapped: set[str]) -> UiNode | None:
         if is_submit(n) and f"{n.label}{n.bounds}" not in tapped:
             return n
     return None
+
+_GATE_WORDS = re.compile(
+    r"\b(log ?in|sign ?in|signin|login|verify|verification|otp|one[- ]time|passcode|password|enter (?:the )?code|"
+    r"mpin|pin)\b",
+    re.IGNORECASE,
+)
+
+
+def is_login_gate(nodes: list[UiNode], fields: list[FormField]) -> bool:
+    """Ask the human only on a real login / OTP screen, never on ordinary forms (signup, search, contact, profile).
+
+    A gate has a secret field (password / OTP / PIN), or an account field (email / phone / username) on a screen whose
+    own words say log in / sign in / verify / OTP."""
+    kinds = {f.kind for f in fields}
+    if kinds & {"password", "otp", "pin"}:
+        return True
+    if not kinds & {"email", "phone", "username"}:
+        return False
+    words = " ".join(f"{n.text} {n.desc} {n.rid}" for n in nodes)
+    return bool(_GATE_WORDS.search(words))
+

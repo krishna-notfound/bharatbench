@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .adb import Adb
-from .forms import ASK_LABELS, SECRET_KINDS, FormField, adb_text, fillable_fields, pick_submit
+from .forms import ASK_LABELS, SECRET_KINDS, FormField, adb_text, fillable_fields, is_login_gate, pick_submit
 from .inputs import AskField, InputBroker
 from .models import HarnessScreen, HarnessStep, ProfileId
 from .parsers import (
@@ -288,10 +288,12 @@ class Crawler:
 
     async def _fill_form(self, xml: str) -> str | None:
         """Fill every visible empty field once, hide the keyboard, return the fresh dump (None = no form)."""
-        fields = fillable_fields(parse_ui_nodes(xml), self._filled)
+        nodes = parse_ui_nodes(xml)
+        fields = fillable_fields(nodes, self._filled)
         if not fields:
             return None
-        await self._ask_user(fields)
+        if is_login_gate(nodes, fields):  # never ask on ordinary forms; they get realistic test data
+            await self._ask_user(fields)
         for f in fields:
             await self._fill_field(f)
         if await self._keyboard_shown():
@@ -333,6 +335,11 @@ class Crawler:
             else:
                 node = None
             node = node or self._pick(parse_ui_nodes(xml), tapped)
+            if not await self.in_app():  # never tap another app or the home screen: bring ours back first
+                self._fg_hash = None
+                xml = await self._recover_foreground(xml)
+                await self._capture(xml)
+                continue
             if node:
                 tapped.add(f"{node.label}{node.bounds}")
                 cx, cy = node.center
@@ -348,6 +355,14 @@ class Crawler:
             if self.profile_id == "process_death" and i == 2 and self.j.state_lost_after_restore is None:
                 xml = await self._kill_and_restore(xml)
         return self.j
+
+    async def in_app(self) -> bool:
+        """True only when a window of the app under test has focus (any display). Unknown counts as NOT in app."""
+        rc, out, _ = await self.adb.shell("dumpsys window | grep mCurrentFocus", timeout=15)
+        if rc == 0 and f" {self.package}/" in out:
+            return True
+        fg = await self.foreground()
+        return bool(fg and fg.startswith(f"{self.package}/"))
 
     async def _recover_foreground(self, xml: str) -> str:
         fg = await self._fg_for(xml)

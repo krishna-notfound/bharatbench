@@ -32,6 +32,12 @@ d. If the app offers sign-up without an OTP, create a test account with clearly 
 e. If none of that works within 6 actions on the wall, reply "done" with reason "login wall: could not get in"
    — never keep tapping the same login screen.
 
+YOU TEST ONLY ONE APP
+You test ONLY the app named in "App package" — the APK the developer uploaded. Every other app on the phone is out of
+scope and must never be opened, tapped or tested. If the Visible UI looks like a home screen, app drawer, recent-apps
+list, a browser or any other app (icons or labels of other apps, launcher widgets), you are NOT in the app: reply
+{"action":"back","reason":"not in the app under test"} and the lab will bring the app back. Never tap an app icon.
+
 STAY INSIDE THIS APP
 Every reply is checked: if your action opens another app (browser, Play Store, settings, share sheet, dialer,
 maps, email), the lab brings you back and marks that action as useless. Avoid: "Rate us", "Share", "Open in

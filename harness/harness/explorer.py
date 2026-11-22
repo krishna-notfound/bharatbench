@@ -27,7 +27,7 @@ import httpx
 from .agent import MAX_NODES, render_nodes
 from .crawler import Crawler
 from .explorer_prompt import EXPLORER_SYSTEM_PROMPT
-from .forms import adb_text
+from .forms import adb_text, fillable_fields, is_login_gate
 from .parsers import UiNode, clickable_nodes, is_denied, normalize_activity, parse_ui_nodes, ui_hash
 from .secrets import Secrets
 from .settings import Settings
@@ -239,14 +239,27 @@ class Explorer:
         c._fg_hash = None
         return await c._settle()
 
+    async def outside_app(self) -> bool:
+        """Pre-action check: True when ANOTHER app (or the home screen) is in front. Never act there."""
+        pkg, _ = await self.focus()
+        return pkg is not None and not self._in_app(pkg)
+
     async def act_tap(self, n: UiNode, reason: str) -> None:
         c, t0 = self.c, self.c._clock()
+        if await self.outside_app():
+            await self.guard("", f"tap {n.label}")
+            c._step("wait", False, n.label, t0, "not inside the app under test: tap not sent, returned to the app first")
+            return
         cx, cy = n.center
         rc, _, _ = await c.adb.shell("input", "tap", str(cx), str(cy), timeout=15)
         c._step("tap", rc == 0, n.label, t0, reason, xy=(cx, cy))
 
     async def act_fill(self, n: UiNode, text: str, reason: str) -> None:
         c, sec, t0 = self.c, self.sec, self.c._clock()
+        if await self.outside_app():
+            await self.guard("", f"fill {n.label}")
+            c._step("wait", False, n.label, t0, "not inside the app under test: typing not sent, returned to the app first")
+            return
         cx, cy = n.center
         rc, _, _ = await c.adb.shell("input", "tap", str(cx), str(cy), timeout=15)
         if rc == 0 and n.text and n.text != n.hint:
@@ -326,6 +339,7 @@ class Explorer:
                 break
             t0 = c._clock()
             all_nodes = parse_ui_nodes(xml)
+            self.cur_nodes = all_nodes
             pkg, comp = await self.focus()
             activity = normalize_activity(f"{pkg}/{comp}", self.pkg) if pkg and comp else c._fg
             sig = signature(activity, all_nodes)
@@ -457,6 +471,11 @@ class Explorer:
         fields, reason = act.get("fields", []), act.get("reason", "")
         t0 = c._clock()
         req = getattr(c, "request_input", None)
+        nodes = getattr(self, "cur_nodes", [])
+        if req is not None and not is_login_gate(nodes, fillable_fields(nodes, set())):
+            st.notes.append("This is not a login/OTP screen: fill ordinary fields with test data yourself, don't ask.")
+            c._step("wait", False, "ask", t0, "not a login screen; not asking the user")
+            return "ask-skip"
         if req is None or st.asked:
             st.notes.append("No human can answer: look for Skip / Guest / sign-up instead.")
             c._step("wait", False, "ask", t0, "no human available; skipping")
