@@ -1,5 +1,6 @@
 """Markdown report rendering."""
 
+from app.fix_prompt import report_prompt
 from app.models import Finding, Profile, Run
 from app.profiles import UNSUPPORTED_CONDITIONS
 
@@ -101,4 +102,16 @@ def render_markdown(run: Run, findings: list[Finding], profiles: list[Profile]) 
             lines.append("")
         if f.repro_flow:
             lines += ["**Maestro flow:**", "", "```yaml", f.repro_flow.rstrip(), "```", ""]
+    if findings:
+        lines += [
+            "## Fix with AI",
+            "",
+            ("Paste this prompt into your AI coding assistant (Claude Code, Cursor or Copilot) inside your app's "
+            "repository, then re-run the test to confirm. Each finding also has its own prompt in the BharatBench app."),
+            "",
+            "````markdown",
+            report_prompt(run, findings),
+            "````",
+            "",
+        ]
     return "\n".join(lines)
