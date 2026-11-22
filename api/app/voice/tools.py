@@ -187,7 +187,10 @@ async def _resolve_run(service: RunService, ref: str | None, ctx: ToolContext) -
         return run
     needle = ref.lower().removesuffix(".apk")
     runs = await service.list_runs()  # newest first
-    for pool in ([r for r in runs if r.status != "failed"], runs):
+    # Finished runs have the data people ask about; then anything still in progress; failed runs last.
+    finished = [r for r in runs if r.status == "done"]
+    in_progress = [r for r in runs if r.status not in ("done", "failed", "cancelled")]
+    for pool in (finished, in_progress, runs):
         for r in pool:
             if needle and needle in r.apk_name.lower():
                 return r
