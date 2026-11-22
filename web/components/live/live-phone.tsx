@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ChevronsRight, Smartphone } from "lucide-react";
 import { ActionCaption } from "@/components/live/action-caption";
 import { TapRipple } from "@/components/live/tap-ripple";
-import { captionFor, liveFrameUrl, PROFILE_LABEL, useLive } from "@/lib/live";
+import { captionFor, liveFrameUrl, profileLabel, useLive } from "@/lib/live";
 
 export interface PhoneRipple {
   key: string;
@@ -101,7 +101,7 @@ export function LivePhone({ runId, active }: { runId: string; active: boolean })
       ? { key: stepKey, xPct: (tap.x / screen.w) * 100, yPct: (tap.y / screen.h) * 100 }
       : null;
   const caption = live?.running === false && !shown ? null : captionFor(live?.action, live?.target);
-  const badge = live?.profile_id ? (PROFILE_LABEL[live.profile_id] ?? live.profile_id) : null;
+  const badge = live?.profile_id ? profileLabel(live.profile_id) : null;
   const stepText = live?.step_index != null ? `Step ${live.step_index + 1}` : null;
   const empty = live && !live.running && live.reason ? live.reason : "Waiting for the test phone…";
 

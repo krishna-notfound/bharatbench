@@ -55,6 +55,18 @@ export const getRun = (id: string) =>
   request<Run>(`/api/runs/${encodeURIComponent(id)}`);
 export const getFindings = (id: string) =>
   request<Finding[]>(`/api/runs/${encodeURIComponent(id)}/findings`);
+export interface AgentTestRow {
+  id: string;
+  title: string;
+  goal: string;
+  condition: string;
+  success_check: string;
+  passed: boolean | null;
+  reason: string;
+  profile_dir: string;
+}
+export const getAgentTests = (id: string) =>
+  request<AgentTestRow[]>(`/api/runs/${encodeURIComponent(id)}/agent-tests`);
 export const getEvents = (id: string, afterSeq?: number) =>
   request<RunEvent[]>(
     `/api/runs/${encodeURIComponent(id)}/events${

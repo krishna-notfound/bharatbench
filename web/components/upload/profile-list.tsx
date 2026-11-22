@@ -102,7 +102,9 @@ export function AdvancedDisclosure({
   open,
   onToggle,
   children,
+  label = "Advanced",
 }: {
+  label?: string;
   open: boolean;
   onToggle: () => void;
   children: React.ReactNode;
@@ -115,7 +117,7 @@ export function AdvancedDisclosure({
         onClick={onToggle}
         className="flex items-center gap-1 rounded-full px-1 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"
       >
-        Advanced
+        {label}
         <ChevronDown
           className={cn("size-4 transition-transform", open && "rotate-180")}
         />

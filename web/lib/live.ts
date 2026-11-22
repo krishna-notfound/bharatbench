@@ -41,6 +41,10 @@ export interface Replay {
   profiles: ReplayProfile[];
 }
 
+export const profileLabel = (id: string): string =>
+  (PROFILE_LABEL as Record<string, string>)[id] ??
+  (id.startsWith("agent_") ? `Agent: ${id.slice(6).replace(/_/g, " ")}` : id);
+
 export const PROFILE_LABEL: Record<ProfileId, string> = {
   baseline: "Normal phone",
   budget_2gb: "2 GB budget phone",

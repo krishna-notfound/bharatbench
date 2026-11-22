@@ -4,7 +4,7 @@ import { useState } from "react";
 import { PhoneFrame, type PhoneRipple } from "@/components/live/live-phone";
 import { useFetch } from "@/components/shell/use-fetch";
 import { artifactUrl } from "@/lib/api";
-import { captionFor, getReplay, PROFILE_LABEL, type ReplayProfile } from "@/lib/live";
+import { captionFor, getReplay, profileLabel, type ReplayProfile } from "@/lib/live";
 
 /** Playwright-trace style replay: a filmstrip of steps; picking one shows its screenshot, action and tap point. */
 export function StepReplay({ runId }: { runId: string }) {
@@ -24,6 +24,7 @@ export function StepReplay({ runId }: { runId: string }) {
 
   return (
     <section
+      id="replay"
       aria-label="Step replay"
       className="space-y-5 rounded-3xl border border-border bg-card p-6 shadow-[0_1px_2px_rgba(30,27,46,0.04),0_8px_24px_rgba(124,92,255,0.06)] md:p-8"
     >
@@ -48,7 +49,7 @@ export function StepReplay({ runId }: { runId: string }) {
                   : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
             >
-              {PROFILE_LABEL[p.profile_id] ?? p.profile_id}
+              {profileLabel(p.profile_id)}
             </button>
           ))}
         </div>
@@ -60,7 +61,7 @@ export function StepReplay({ runId }: { runId: string }) {
           ripple={ripple}
           caption={caption}
           warn={!step.ok}
-          badge={PROFILE_LABEL[prof.profile_id] ?? prof.profile_id}
+          badge={profileLabel(prof.profile_id)}
           step={`Step ${step.index + 1} of ${prof.steps.length}`}
           empty="No screenshot for this step"
         />

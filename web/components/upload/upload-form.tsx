@@ -136,7 +136,8 @@ export function UploadForm() {
 
   const all = (profiles.data ?? []).filter((p) => p.fidelity !== "unsupported");
   const baseline = all.find((p) => p.id === "baseline");
-  const choices = all.filter((p) => p.id !== "baseline");
+  // low_storage cannot be applied on this test phone (redroid shares the host disk), so it is not offered
+  const choices = all.filter((p) => p.id !== "baseline" && p.id !== "low_storage");
   const selected: Set<ProfileId> =
     picked ??
     new Set(DEFAULTS.filter((d) => choices.some((p) => p.id === d)));
@@ -413,17 +414,28 @@ export function UploadForm() {
               />
             ) : (
               <>
-                <ProfileList
-                  profiles={choices}
-                  selected={selected}
-                  onToggle={toggle}
-                  disabled={submitting}
-                  showHow={advanced}
-                />
+                <div className={cn(CARD, "space-y-1 border-primary/60 bg-accent/40 p-4")}>
+                  <p className="text-sm font-medium">
+                    Let the agent decide (recommended)
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    I pick the conditions that fit your app, then write and run
+                    a few custom tests for it: sign-up checks, search, losing
+                    the network mid-login and more.
+                  </p>
+                </div>
                 <AdvancedDisclosure
+                  label="Advanced: choose conditions"
                   open={advanced}
                   onToggle={() => setAdvanced((v) => !v)}
                 >
+                  <ProfileList
+                    profiles={choices}
+                    selected={selected}
+                    onToggle={toggle}
+                    disabled={submitting}
+                    showHow={advanced}
+                  />
                   {baseline && (
                     <p className="rounded-2xl bg-muted p-3 text-sm text-muted-foreground">
                       <span className="font-medium text-foreground">

@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     reconnect_wait_s: int = 20
     keep_jobs: int = 5
     max_apk_mb: int = 300
+    llm_base_url: str = "https://api.sarvam.ai/v1"  # f23 agent tests (OpenAI-style chat completions)
+    llm_model: str = "sarvam-105b"
+    llm_api_key: str | None = None  # unset: agent tests are skipped with a note
+    agent_test_timeout_s: int = 150
 
 
 def load_settings() -> Settings:

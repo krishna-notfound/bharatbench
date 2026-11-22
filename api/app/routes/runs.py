@@ -1,4 +1,5 @@
 import asyncio
+import json
 import uuid
 from pathlib import Path
 from typing import get_args
@@ -90,6 +91,19 @@ async def list_runs(authorization: str | None = Header(default=None)) -> list[Ru
 @router.get("/{run_id}")
 async def get_run(run_id: str) -> Run:
     return await _require_run(run_id)
+
+
+@router.get("/{run_id}/agent-tests")
+async def agent_tests(request: Request, run_id: str) -> list[dict]:  # type: ignore[type-arg]
+    """Tests the agent wrote for this run, with outcomes once the run is done (f23)."""
+    await _require_run(run_id)
+    f = request.app.state.settings.data_dir / "runs" / run_id / "artifacts" / "agent_tests.json"
+    if not await anyio.Path(f).is_file():
+        return []
+    try:
+        return json.loads(await anyio.Path(f).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
 
 
 @router.get("/{run_id}/findings")

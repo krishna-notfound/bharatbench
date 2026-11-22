@@ -9,12 +9,17 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
+import httpx
+
 from . import evidence
 from .adb import Adb
+from .agent import drive, llm_ready
 from .crawler import Crawler, Sleep
 from .heal import DeviceDoctor
 from .live import LiveState
 from .models import (
+    AgentTest,
+    HarnessAgentTestResult,
     HarnessJob,
     HarnessJobRequest,
     HarnessProfileResult,
@@ -163,8 +168,9 @@ class JobRunner:
             live.start(self.adb)
         profiles: list[HarnessProfileResult] = []
         security: list[HarnessSecurityCheck] = []
+        agent: list[HarnessAgentTestResult] = []
         try:
-            await asyncio.wait_for(self._run(job, req, profiles, security), self.settings.job_timeout_s)
+            await asyncio.wait_for(self._run(job, req, profiles, security, agent), self.settings.job_timeout_s)
             if job.job_id in self._cancel:
                 job.status = "cancelled"
             else:
@@ -181,7 +187,7 @@ class JobRunner:
             version = await self._android_version()
             result = HarnessResult(
                 job_id=job.job_id, device=self.settings.android_serial, android_version=version, profiles=profiles,
-                security=security,
+                security=security, agent_tests=agent,
             )  # fmt: skip
             self.results[job.job_id] = result
             d = self.job_dir(job.job_id)
@@ -197,8 +203,9 @@ class JobRunner:
 
     async def _run(
         self, job: HarnessJob, req: HarnessJobRequest, out: list[HarnessProfileResult],
-        security: list[HarnessSecurityCheck],
+        security: list[HarnessSecurityCheck], agent: list[HarnessAgentTestResult] | None = None,
     ) -> None:  # fmt: skip
+        agent = agent if agent is not None else []
         apk = self.job_dir(job.job_id) / "app.apk"
         ready = await self.doctor.ensure_ready(
             lambda m: self._event(job, m), protect_jobs={job.job_id}, keep_pkgs={req.package_name}
@@ -222,6 +229,8 @@ class JobRunner:
             out.append(await self._profile_with_recovery(job, req, pid))
             job.progress = (n + 1) / total
             self._event(job, f"profile {pid}: done")
+        if job.job_id not in self._cancel and req.agent_tests:
+            await self._agent_tests(job, req, agent)
         if job.job_id not in self._cancel and out:
             await self._security(job, req, security)
 
@@ -316,6 +325,67 @@ class JobRunner:
                 self._event(job, f"profile {pid}: REVERT FAILED: {exc}")
                 log.warning("revert failed for %s: %s", pid, exc)
 
+
+    # ---- agent-written tests (f23) ----
+    async def _agent_tests(self, job: HarnessJob, req: HarnessJobRequest, out: list[HarnessAgentTestResult]) -> None:
+        cfg = self.settings
+        if not llm_ready(cfg):
+            self._event(job, "agent tests skipped: no LLM key configured on the test phone host")
+            out.extend(
+                HarnessAgentTestResult(
+                    id=t.id, title=t.title, condition=t.condition,
+                    reason="Skipped: the test phone host has no LLM key (set LLM_API_KEY in harness/.env).",
+                )
+                for t in req.agent_tests
+            )  # fmt: skip
+            return
+        live = self.live.setdefault(job.job_id, LiveState())
+        async with httpx.AsyncClient() as client:
+            for t in req.agent_tests:
+                if job.job_id in self._cancel:
+                    break
+                job.current_profile = t.condition
+                live.set_profile(f"agent_{t.id}")
+                self._event(job, f"agent test '{t.title}': start")
+                try:
+                    res = await asyncio.wait_for(self._agent_one(job, req, t, client, live), cfg.agent_test_timeout_s)
+                except TimeoutError:
+                    res = HarnessAgentTestResult(
+                        id=t.id, title=t.title, condition=t.condition, reason="This test took too long and was stopped."
+                    )
+                except Exception as exc:  # noqa: BLE001 - one broken test must not drop the others
+                    res = HarnessAgentTestResult(
+                        id=t.id, title=t.title, condition=t.condition, reason=f"Could not run ({type(exc).__name__})."
+                    )
+                out.append(res)
+                self._event(job, f"agent test '{t.title}': {'passed' if res.passed else 'failed' if res.passed is False else 'not judged'}")
+
+    async def _agent_one(
+        self, job: HarnessJob, req: HarnessJobRequest, t: AgentTest, client: httpx.AsyncClient, live: LiveState
+    ) -> HarnessAgentTestResult:
+        cfg = self.settings
+        pm = ProfileManager(self.adb, self._sleep, cfg.device_kind, tc=cfg.tc_path, ip=cfg.ip_path, sudo=cfg.sudo_path)
+        pkg = req.package_name
+        try:
+            await self.adb.shell("am", "force-stop", pkg, timeout=20)
+            await self.adb.shell("pm", "clear", pkg, timeout=30)
+            try:
+                await pm.apply(t.condition)
+            except ProfileError as exc:
+                return HarnessAgentTestResult(
+                    id=t.id, title=t.title, condition=t.condition, reason=f"Condition could not be applied: {exc}"
+                )
+            crawler = Crawler(
+                self.adb, pkg, req.main_activity, self.job_dir(job.job_id), f"agent_{t.id}",  # type: ignore[arg-type]
+                cancelled=lambda: job.job_id in self._cancel, sleep=self._sleep, clock=self._clock,
+                on_step=live.note_step,
+            )  # fmt: skip
+            return await drive(crawler, t, cfg, client, live.set_caption)
+        finally:
+            try:
+                await pm.revert(t.condition)
+            except Exception as exc:  # noqa: BLE001
+                self._event(job, f"agent test {t.id}: REVERT FAILED: {exc}")
 
     # ---- dynamic security checks ----
     async def _finish_capture(self, job: HarnessJob, capture: CleartextCapture) -> None:

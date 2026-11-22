@@ -17,11 +17,10 @@ def _ui_strings(strings: list[str], limit: int = 40) -> list[str]:
     out: list[str] = []
     for s in strings:
         t = s.strip()
-        if 3 <= len(t) <= 40 and t[0].isalpha() and not any(c in t for c in "/\;<>{}=$@_%") and " " in t or (
-            3 <= len(t) <= 20 and t.isalpha() and t[0].isupper() and t not in out
-        ):
-            if t not in out:
-                out.append(t)
+        wordy = 3 <= len(t) <= 40 and t[0].isalpha() and " " in t and not any(c in t for c in r"/\;<>{}=$@_%")
+        label = 3 <= len(t) <= 20 and t.isalpha() and t[0].isupper()
+        if (wordy or label) and t not in out:
+            out.append(t)
         if len(out) >= limit:
             break
     return out

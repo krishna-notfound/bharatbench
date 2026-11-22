@@ -12,6 +12,7 @@ import { ErrorState } from "@/components/shell/states";
 import { useFetch } from "@/components/shell/use-fetch";
 import { FindingsSection } from "@/components/findings/findings-section";
 import { LivePhone } from "@/components/live/live-phone";
+import { AgentTestsCard } from "@/components/runs/agent-tests-card";
 import { StepReplay } from "@/components/live/step-replay";
 import { ReportInsights } from "@/components/report/report-insights";
 import { ScorePanel } from "@/components/runs/score-panel";
@@ -213,6 +214,8 @@ export function RunDetail({ runId }: { runId: string }) {
         onRetry={findings.reload}
         runActive={active}
       />
+
+      {r.status === "done" && <AgentTestsCard runId={runId} />}
 
       {TERMINAL_STATUSES.includes(r.status) && !runtimeSkipped && <StepReplay runId={runId} />}
 

@@ -32,12 +32,17 @@ class LiveState:
     target: str | None = None
     tap: tuple[int, int] | None = None
     step_ts: float = 0.0
+    caption: str | None = None
     running: bool = True
     _task: asyncio.Task[None] | None = field(default=None, repr=False)
 
     def set_profile(self, profile_id: str) -> None:
         self.profile_id = profile_id
-        self.step_index = self.action = self.target = self.tap = None
+        self.step_index = self.action = self.target = self.tap = self.caption = None
+        self.seq += 1
+
+    def set_caption(self, text: str) -> None:
+        self.caption = text
         self.seq += 1
 
     def note_step(self, step: HarnessStep) -> None:
@@ -56,6 +61,7 @@ class LiveState:
             "target": self.target,
             "tap": {"x": self.tap[0], "y": self.tap[1]} if self.tap else None,
             "screen": {"w": self.screen[0], "h": self.screen[1]} if self.screen else None,
+            "caption": self.caption,
             "running": self.running,
             "has_frame": self.frame is not None,
         }

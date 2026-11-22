@@ -5,6 +5,7 @@ Runtime testing is skipped (with a recorded reason), never faked, when the harne
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
 import zipfile
@@ -15,11 +16,14 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.agent_tests import generate_agent_tests
 from app.analyzer.dedupe import dedupe_findings
 from app.analyzer.explain import explain_findings
+from app.analyzer.rules_agent import agent_test_findings
 from app.events import EventBus
 from app.live import write_steps
 from app.models import (
+    AgentTest,
     AppInfo,
     Finding,
     HarnessJob,
@@ -137,6 +141,11 @@ def _artifact_refs(result: HarnessResult) -> list[tuple[str, str]]:
             for path in (s.screenshot, s.ui_dump):
                 if path:
                     refs.append((p.profile_id, path))
+    for t in result.agent_tests:
+        for s in t.screens:
+            for path in (s.screenshot, s.ui_dump):
+                if path:
+                    refs.append((f"agent_{t.id}", path))
     return refs
 
 
@@ -173,12 +182,43 @@ async def _download_artifacts(
             for s in p.screens
         ]
         profiles.append(p.model_copy(update={"screens": screens, "logcat": remap(p.profile_id, p.logcat)}))
-    out = result.model_copy(update={"profiles": profiles})
+    agent_results = []
+    for t in result.agent_tests:
+        pid = f"agent_{t.id}"
+        screens = [
+            s.model_copy(update={"screenshot": remap(pid, s.screenshot), "ui_dump": remap(pid, s.ui_dump)})
+            for s in t.screens
+        ]
+        agent_results.append(t.model_copy(update={"screens": screens}))
+    out = result.model_copy(update={"profiles": profiles, "agent_tests": agent_results})
     try:
         write_steps(out, art_dir)
     except (OSError, ValueError) as exc:
         log.warning("Could not write step replay for run %s: %s", run_id, exc)
     return out
+
+
+def _save_agent_tests(art_dir: Path, tests: list[AgentTest], result: HarnessResult) -> None:
+    """Persist what the agent wrote plus the outcome (None = not judged) for the report/UI."""
+    by_id = {t.id: t for t in result.agent_tests}
+    rows = []
+    for t in tests:
+        r = by_id.get(t.id)
+        rows.append(
+            {
+                **t.model_dump(),
+                "passed": r.passed if r else None,
+                "reason": r.reason if r else "Not run (the test phone did not reach this test).",
+                "profile_dir": f"agent_{t.id}",
+                "steps": [s.model_dump() for s in r.steps] if r else [],
+                "screens": [s.model_dump() for s in r.screens] if r else [],
+            }
+        )
+    try:
+        art_dir.mkdir(parents=True, exist_ok=True)
+        (art_dir / "agent_tests.json").write_text(json.dumps(rows), encoding="utf-8")
+    except OSError as exc:
+        log.warning("Could not save agent tests: %s", exc)
 
 
 def _kind(rel: str) -> str:
@@ -233,6 +273,7 @@ async def _run_harness(
     job_ids: dict[str, str],
     journey_steps: int | None = None,
     stop_flags: set[str] | None = None,
+    agent_tests: list[AgentTest] | None = None,
 ) -> tuple[Run, HarnessResult]:
     stop_flags = stop_flags if stop_flags is not None else set()
     if client is None:
@@ -256,6 +297,7 @@ async def _run_harness(
                     package_name=run.app.package_name,
                     main_activity=run.app.main_activity,
                     profiles=run.profile_ids,
+                    agent_tests=agent_tests or [],
                     **({"journey_steps": min(journey_steps, 20)} if journey_steps else {}),
                 ),
             )
@@ -376,6 +418,8 @@ async def run_pipeline(
         await bus.publish(run_id, "log", f"Static analysis found {len(static)} findings.")
         collected: list[Finding] = list(static)
 
+        agent_list, agent_src = await generate_agent_tests(app_info, static)
+        await bus.publish(run_id, "log", f"Agent wrote {len(agent_list)} custom test(s) ({agent_src}).")
         runtime_executed = False
         skipped_reason: str | None = None
         try:
@@ -384,9 +428,11 @@ async def run_pipeline(
             client = harness_factory()
             run, result = await _run_harness(
                 client, storage, bus, run, apk_path, data_dir / "runs" / run_id / "artifacts", job_ids,
-                journey_steps, stop_flags,
+                journey_steps, stop_flags, agent_list,
             )
             collected.extend(runtime_findings(run_id, result, package=app_info.package_name))
+            collected.extend(agent_test_findings(run_id, result))
+            _save_agent_tests(data_dir / "runs" / run_id / "artifacts", agent_list, result)
             runtime_executed = True
         except _Skip as skip:
             skipped_reason = str(skip)

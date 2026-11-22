@@ -25,9 +25,18 @@ def png_size(path: Path) -> tuple[int, int] | None:
     return int(w), int(h)
 
 
+class _AgentView:
+    def __init__(self, t: Any) -> None:
+        self.profile_id, self.steps, self.screens = f"agent_{t.id}", t.steps, t.screens
+
+
+def _agent_as_profiles(result: HarnessResult) -> list[Any]:
+    return [_AgentView(t) for t in result.agent_tests]
+
+
 def write_steps(result: HarnessResult, art_dir: Path) -> None:
     """Write `{profile_id}/steps.json` for each profile (refs already rewritten to `{profile}/{file}`)."""
-    for p in result.profiles:
+    for p in [*result.profiles, *_agent_as_profiles(result)]:
         if not p.steps:
             continue
         shots = {s.index: s.screenshot for s in p.screens}
@@ -60,6 +69,11 @@ async def read_replay(run: Run, art_dir: Path) -> dict[str, Any]:
             continue
         try:
             profiles.append(json.loads(await f.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    for f in sorted(art_dir.glob("agent_*/steps.json")) if art_dir.is_dir() else []:
+        try:
+            profiles.append(json.loads(f.read_text(encoding="utf-8")))
         except (OSError, ValueError):
             continue
     return {"run_id": run.id, "profiles": profiles}
