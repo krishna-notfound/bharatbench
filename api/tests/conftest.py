@@ -66,3 +66,11 @@ def fake_analyzer(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(pipeline, "load_analyzer", lambda: (analyze_apk, runtime_findings))
     return analyze_apk, runtime_findings
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limiter():
+    from app import access
+
+    access.limiter.reset()
+    yield

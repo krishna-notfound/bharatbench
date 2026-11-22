@@ -38,7 +38,12 @@ class VoiceSession:
 
     # ----- accessors used by the agent -----
     def service(self) -> RunService:
-        return self._get_service()
+        # /ws/voice carries no sign-in: with accounts configured it may not list other people's runs.
+        from app.access import ScopedService, dev_mode
+        from app.settings import get_settings
+
+        service = self._get_service()
+        return service if dev_mode(get_settings()) else ScopedService(service, set())  # type: ignore[return-value]
 
     def tool_context(self) -> ToolContext:
         return ToolContext(self.active_run_id)

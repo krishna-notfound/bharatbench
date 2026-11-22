@@ -502,16 +502,16 @@ class DeviceAudit:
 
     async def _launch_main(self) -> None:
         _, out, _ = await self.adb.shell(
-            "cmd", "package", "resolve-activity", "--brief", "-c", "android.intent.category.LAUNCHER", self.pkg,
+            "cmd", "package", "resolve-activity", "--brief", "-c", "android.intent.category.LAUNCHER", shlex.quote(self.pkg),
             timeout=20,
         )  # fmt: skip
         comp = out.strip().splitlines()[-1].strip() if out.strip() else ""
         if "/" in comp:
-            await self.adb.shell("am", "start", "-W", "-n", comp, timeout=30)
+            await self.adb.shell("am", "start", "-W", "-n", shlex.quote(comp), timeout=30)
 
     async def _probe(self, c: Component) -> ProbeResult:
         pkg = self.pkg
-        comp = f"{pkg}/{c.name}"
+        comp = shlex.quote(f"{pkg}/{c.name}")  # c.name comes from the (untrusted) APK manifest
         await self.adb.shell("am", "force-stop", pkg, timeout=20)
         await self.adb.run(["logcat", "-c"], timeout=20)
         if c.kind == "activity":

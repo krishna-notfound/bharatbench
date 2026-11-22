@@ -1,9 +1,10 @@
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import Response
 
+from app.access import require_run_owner
 from app.live import forward_input, live_frame, live_state, read_replay, validate_input
 from app.models import Run
 from app.services import get_run_service
@@ -27,9 +28,12 @@ async def live(run_id: str) -> Response:
 
 
 @router.post("/{run_id}/input")
-async def live_input(run_id: str, request: Request) -> dict[str, bool]:
+async def live_input(
+    run_id: str, request: Request, authorization: str | None = Header(default=None)
+) -> dict[str, bool]:
     """f24: the user answers the agent's live question. Values are forwarded to the harness and never kept."""
     run = await _require_run(run_id)
+    await require_run_owner(run, authorization, request.app.state.settings)
     try:
         body = await request.json()
     except ValueError:

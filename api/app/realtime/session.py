@@ -835,8 +835,13 @@ class RealtimeSession:
                     label=registry.label_for(call.name),
                     args=call.arguments,
                 )
+                from app.access import scope_service
+
+                scoped = await scope_service(
+                    self._get_service(), persistence.user_id(self.user), self.settings
+                )
                 ok, result, summary = await registry.run_tool(
-                    self._get_service(), call.name, call.arguments, registry.ToolContext(self.active_run_id)
+                    scoped, call.name, call.arguments, registry.ToolContext(self.active_run_id)
                 )
                 await self._emit(
                     turn, "tool.finished", call_id=call.id, name=call.name, ok=ok, summary=summary

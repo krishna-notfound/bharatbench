@@ -1,11 +1,13 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel
 
 from app import insights
+from app.access import rate_limit, require_run_owner
 from app.models import Run, RunService
 from app.services import get_run_service
+from app.settings import get_settings
 from app.voice.languages import SESSION_LANGUAGES
 from app.voice.sarvam_stt import SarvamError
 
@@ -41,10 +43,14 @@ async def compare(run_id: str) -> dict[str, Any]:
 
 
 @router.post("/{run_id}/brief")
-async def brief(run_id: str, body: BriefRequest) -> dict[str, Any]:
+async def brief(
+    request: Request, run_id: str, body: BriefRequest, authorization: str | None = Header(default=None)
+) -> dict[str, Any]:
     if body.language not in SESSION_LANGUAGES:
         raise HTTPException(422, f"Unsupported language {body.language}")
     service, run = await _load(run_id)
+    await require_run_owner(run, authorization, getattr(request.app.state, "settings", None) or get_settings())
+    rate_limit(request, "brief", 20)
     if run.status != "done":
         raise HTTPException(409, "The run has not finished yet")
     try:

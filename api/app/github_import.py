@@ -7,7 +7,7 @@ nothing from the repository is executed on the API host.
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import anyio
 import httpx
@@ -20,6 +20,8 @@ NO_APK_MESSAGE = (
 )
 BAD_URL = "That isn't a GitHub repository link. Use https://github.com/owner/repo"
 _NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
+MAX_REDIRECTS = 4
+_ALLOWED_HOST_SUFFIXES = ("github.com", "githubusercontent.com")
 _PREFER = ("universal", "arm64", "x86_64")
 
 
@@ -64,6 +66,8 @@ def parse_repo_url(raw: str) -> RepoRef:
     tag = None
     if len(parts) >= 5 and parts[2] == "releases" and parts[3] == "tag":
         tag = "/".join(parts[4:])
+        if any(seg in ("", ".", "..") or "%" in seg or "\\" in seg for seg in tag.split("/")):
+            raise GithubImportError(400, BAD_URL)
     return RepoRef(owner, repo, tag)
 
 
@@ -111,7 +115,7 @@ async def find_apk(ref: RepoRef, token: str | None, client: httpx.AsyncClient) -
     release: dict | None = None
     asset: dict | None = None
     if ref.tag:
-        resp = await client.get(f"{base}/tags/{ref.tag}", headers=h)
+        resp = await client.get(f"{base}/tags/{quote(ref.tag, safe='')}", headers=h)
         if resp.status_code == 404:
             raise GithubImportError(404, f"I couldn't find release {ref.tag} in {ref.owner}/{ref.repo}.")
         if resp.status_code != 200:
@@ -145,12 +149,36 @@ async def find_apk(ref: RepoRef, token: str | None, client: httpx.AsyncClient) -
     return ApkAsset(str(asset["name"]), str(asset["url"]), int(asset.get("size") or 0), str(label))
 
 
+def _github_host(url: str) -> bool:
+    p = urlparse(url)
+    host = (p.hostname or "").lower()
+    return p.scheme == "https" and any(host == s or host.endswith("." + s) for s in _ALLOWED_HOST_SUFFIXES)
+
+
 async def download_apk(asset: ApkAsset, dest: Path, token: str | None, client: httpx.AsyncClient) -> int:
     """Stream the asset to `dest`, enforcing the size cap while reading and checking the ZIP magic."""
-    h = _headers(token, accept="application/octet-stream")
     size = 0
     try:
-        async with client.stream("GET", asset.url, headers=h, follow_redirects=True) as resp:
+        # Follow redirects by hand: every hop must stay on GitHub hosts over https (no SSRF to internal
+        # addresses such as 169.254.169.254), and the token is only ever sent to api.github.com.
+        url = asset.url
+        if not url.startswith(API + "/"):
+            raise GithubImportError(502, "GitHub returned an unexpected download address.")
+        for _hop in range(MAX_REDIRECTS + 1):
+            h = _headers(token if url.startswith(API + "/") else None, accept="application/octet-stream")
+            req = client.build_request("GET", url, headers=h)
+            resp = await client.send(req, stream=True, follow_redirects=False)
+            if resp.status_code in (301, 302, 303, 307, 308):
+                nxt = urljoin(url, resp.headers.get("location", ""))
+                await resp.aclose()
+                if not _github_host(nxt):
+                    raise GithubImportError(502, "GitHub redirected the download somewhere unexpected.")
+                url = nxt
+                continue
+            break
+        else:
+            raise GithubImportError(502, "GitHub redirected the download too many times.")
+        try:
             if resp.status_code != 200:
                 raise GithubImportError(502, f"GitHub would not let me download the APK ({resp.status_code}).")
             async with await anyio.open_file(dest, "wb") as out:
@@ -161,6 +189,8 @@ async def download_apk(asset: ApkAsset, dest: Path, token: str | None, client: h
                     if size > MAX_APK_BYTES:
                         raise GithubImportError(413, "The APK in that release is over the 200 MB limit.")
                     await out.write(chunk)
+        finally:
+            await resp.aclose()
     except httpx.HTTPError as e:
         raise GithubImportError(504, f"Downloading the APK from GitHub failed ({type(e).__name__}). Try again.") from e
     if size == 0:

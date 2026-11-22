@@ -132,10 +132,31 @@ def _dex_facts(apk: object) -> tuple[list[str], list[str], int]:
     return strings, classes[::step][:CLASS_SAMPLE], len(dex_blobs)
 
 
+MAX_ENTRIES = 20_000
+MAX_UNCOMPRESSED = 1536 * 1024 * 1024  # 1.5 GiB of declared content for a <=200 MB upload
+MAX_RATIO = 200
+
+
+def _check_zip_budget(apk_path: Path) -> None:
+    """Refuse zip bombs before androguard inflates anything (central directory only; nothing is extracted)."""
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(apk_path) as z:
+            infos = z.infolist()
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise ValueError(f"Not a valid APK: {exc}") from exc
+    total = sum(i.file_size for i in infos)
+    packed = max(sum(i.compress_size for i in infos), 1)
+    if len(infos) > MAX_ENTRIES or total > MAX_UNCOMPRESSED or total / packed > MAX_RATIO:
+        raise ValueError("Not a valid APK: archive is too large when unpacked")
+
+
 def load_apk_facts(apk_path: Path) -> ApkFacts:
     """Parse an APK into ApkFacts. Raises ValueError("Not a valid APK: ...") on broken input."""
     from androguard.core.apk import APK
 
+    _check_zip_budget(apk_path)
     try:
         apk = APK(str(apk_path))
         if not apk.is_valid_APK():

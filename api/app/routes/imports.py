@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel
 
 from app import github_import as gh
+from app.access import rate_limit
 from app.auth.supabase import bearer_token, verify_token
 from app.conversations.store import get_conversation_store
 from app.models import Run, TestCredentials
@@ -25,6 +26,7 @@ async def import_run(
     request: Request, body: ImportRequest, authorization: str | None = Header(default=None)
 ) -> Run:
     settings: Settings = request.app.state.settings
+    rate_limit(request, "import", 10)
     user = await verify_token(bearer_token(authorization), settings)
     if user is None and settings.auth_required:
         raise HTTPException(401, "Sign in required", headers={"WWW-Authenticate": "Bearer"})

@@ -133,3 +133,12 @@ async def test_unchanged_screen_reuses_screenshot_and_foreground(tmp_path):
     assert len({s.screenshot for s in j.screens}) == 1
     assert sum("screencap" in " ".join(c) for c in dev.calls) == 1
     assert sum("ResumedActivity" in " ".join(c) for c in dev.calls) <= 3  # launch wait + first capture
+
+
+def test_adb_text_neutralises_every_shell_metacharacter():
+    import shlex
+
+    nasty = "a;b|c&d$(id)`id`>x<y*?#'\"\\\nz w%"
+    # adb joins args into one device shell line: the shell must see exactly one word equal to the text
+    assert shlex.split(adb_text(nasty)) == [nasty.replace("%", "%25").replace(" ", "%s")]
+    assert adb_text("Asha Verma") == "Asha%sVerma"

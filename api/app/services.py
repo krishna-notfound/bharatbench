@@ -144,7 +144,7 @@ class RunServiceImpl:
         agent_tests: list[AgentTest] | None = None,
         credentials: TestCredentials | None = None,
     ) -> Run:
-        run_id = uuid.uuid4().hex[:12]
+        run_id = uuid.uuid4().hex  # 128-bit: the id is the share capability for read links
         if credentials is not None and credentials.present:  # memory only, keyed by run id; dropped at the end
             _pipeline.CREDENTIALS[run_id] = credentials
         dest = self.data_dir / "runs" / run_id / "app.apk"

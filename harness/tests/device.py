@@ -106,7 +106,9 @@ class FakeDevice:
         if "mInputShown" in s:
             return 0, (b"  mInputShown=true\n" if self.keyboard else b"  mInputShown=false\n"), b""
         if "input text" in s:
-            self.typed.append(s.split("input text ", 1)[1])
+            import shlex
+
+            self.typed.append(shlex.split(s.split("input text ", 1)[1])[0])  # the device shell unquotes
             self.keyboard = self.keyboard_on_type
             return 0, b"", b""
         if "KEYCODE_BACK" in s and self.keyboard:
