@@ -37,7 +37,7 @@ export function HomeHero() {
               key={s.t}
               className={cn(CARD, "flex items-start gap-3 p-4 text-left")}
             >
-              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-primary">
+              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-[#5b3fd6]">
                 {i + 1}
               </span>
               <span className="text-sm">

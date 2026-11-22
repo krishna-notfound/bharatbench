@@ -17,10 +17,28 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_URL = "https://bharatbench-orpin.vercel.app";
+const SITE_TITLE = "BharatBench — The Real Phone Test";
+const SITE_DESC =
+  "Test your Android app where your users actually are: constrained RAM, flaky networks, low storage.";
+
 export const metadata: Metadata = {
-  title: "BharatBench — The Real Phone Test",
-  description:
-    "Test your Android app where your users actually are: constrained RAM, flaky networks, low storage.",
+  metadataBase: new URL(SITE_URL),
+  title: SITE_TITLE,
+  description: SITE_DESC,
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: SITE_TITLE,
+    description: SITE_DESC,
+    url: SITE_URL,
+    siteName: "BharatBench",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESC,
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

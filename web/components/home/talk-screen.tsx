@@ -171,7 +171,7 @@ export function TalkScreen() {
           {rt.state === "offline" && <WifiOff className="size-4 shrink-0" />}
           <span>{rt.error}</span>
           {rt.state === "offline" && (
-            <button type="button" onClick={() => connect()} className="shrink-0 font-medium text-primary hover:underline">
+            <button type="button" onClick={() => connect()} className="shrink-0 font-medium text-[#5b3fd6] hover:underline">
               Try again
             </button>
           )}

@@ -191,7 +191,7 @@ export function StartTest() {
           >
             {repoTouched && !repoOk
               ? "Use a link like github.com/owner/repo."
-              : "I use the APK from the repo's latest release. Building from source is coming soon."}
+              : "I use the APK from the repo's latest release. Building from source is on the roadmap."}
           </p>
         </div>
       </div>

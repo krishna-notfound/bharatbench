@@ -80,8 +80,8 @@ function SourceTabs({
         >
           {s.label}
           {s.soon && (
-            <span className="ml-1 hidden text-[10px] font-normal text-muted-foreground sm:inline">
-              soon
+            <span className="ml-1.5 hidden rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline-block">
+              <span aria-hidden="true">· </span>Soon
             </span>
           )}
         </button>
@@ -114,7 +114,7 @@ function ComingSoon({
         className="h-12 rounded-full px-5"
       />
       <p className="text-sm text-muted-foreground">
-        <span className="font-medium text-foreground">Coming soon.</span>{" "}
+        <span className="font-medium text-foreground">Available soon.</span>{" "}
         {copy}
       </p>
     </div>
@@ -257,7 +257,7 @@ export function UploadForm() {
                 >
                   {repoTouched && !repoOk
                     ? "Use a link like github.com/owner/repo."
-                    : "I test the APK attached to the repo's latest release. Building from source is coming soon."}
+                    : "I test the APK attached to the repo's latest release. Building from source is on the roadmap."}
                 </p>
               </div>
             )}
