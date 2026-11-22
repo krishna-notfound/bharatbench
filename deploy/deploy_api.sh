@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
-# Called by CI over SSH on every push to main: pull, sync deps, restart, health-check.
+# Called by CI over SSH on every push to main: wait for running tests, pull, sync deps, restart, health-check.
 set -euo pipefail
+
+# Never restart while a test is running: a restart would interrupt it. Wait up to 15 minutes.
+active_runs() {
+  curl -fsS --max-time 5 http://127.0.0.1:8000/api/runs 2>/dev/null \
+    | python3 -c 'import sys,json; print(sum(r["status"] in ("queued","analyzing","provisioning","running","scoring") for r in json.load(sys.stdin)))' \
+    2>/dev/null || echo 0
+}
+for i in $(seq 1 90); do
+  n=$(active_runs)
+  [ "$n" = "0" ] && break
+  echo "Waiting for $n running test(s) to finish before deploying... (${i}/90)"
+  sleep 10
+done
+
 cd ~/bharatbench
 git fetch --quiet origin main
 git reset --hard origin/main
