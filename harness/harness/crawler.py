@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .adb import Adb
-from .forms import SECRET_KINDS, FormField, adb_text, fillable_fields, pick_submit
+from .forms import ASK_LABELS, SECRET_KINDS, FormField, adb_text, fillable_fields, pick_submit
+from .inputs import AskField, InputBroker
 from .models import HarnessScreen, HarnessStep, ProfileId
 from .parsers import (
     UiNode,
@@ -69,6 +70,7 @@ class Crawler:
         clock: Callable[[], float] = time.monotonic,
         on_step: Callable[[HarnessStep], None] | None = None,
         secrets: Secrets | None = None,
+        broker: InputBroker | None = None,
     ) -> None:
         self.adb = adb
         self.package = package
@@ -80,6 +82,7 @@ class Crawler:
         self._clock = clock
         self._on_step = on_step
         self.secrets = secrets
+        self.broker = broker
         self.j = Journey()
         self._launcher: str | None = None
         self._cap_hash: str | None = None  # UI hash of the last captured screen
@@ -233,16 +236,60 @@ class Crawler:
             rc, _, _ = await self.adb.shell("input", "text", adb_text(value), timeout=15)
         self._filled.add(f.key)
         if real:
-            note = f"Filling {'OTP' if f.kind == 'otp' else 'password' if f.kind == 'password' else 'login'} (hidden)"
+            note = f"Filling {'OTP' if f.kind == 'otp' else f.kind if f.kind in ('password', 'pin') else 'login'} (hidden)"
         else:
             note = f"typed a test {f.kind}" + (" (value masked)" if f.kind in SECRET_KINDS else "")
         self._step("fill", rc == 0, f.kind, t0, note, xy=(cx, cy))
+
+    async def request_input(self, fields: list[dict[str, str]], reason: str) -> dict[str, str] | None:
+        """f24 hook for explorers/agents: pause and ask the user live. fields: {key, label, kind}.
+
+        Returns {key: value} (values are registered for masking everywhere) or None on skip/timeout/no broker."""
+        b = self.broker
+        if b is None or not b.enabled:
+            return None
+        if self.secrets is None:
+            self.secrets = Secrets(None)
+        t0 = self._clock()
+        ask = [AskField(str(f["key"]), str(f.get("label") or f["key"]), str(f.get("kind") or "text")) for f in fields]
+        answer = await b.ask(ask, reason)
+        if not answer:
+            self._step("wait", True, "user input", t0, "User input skipped")
+            return None
+        for k, v in answer.items():
+            self.secrets.add_user_value(k, v)
+        self._step("wait", True, "user input", t0, f"You filled {len(answer)} field(s) (hidden)")
+        return answer
+
+    async def _ask_user(self, fields: list[FormField]) -> None:
+        """f24: pause and ask the user for fields only they can supply (no test-account value covers them)."""
+        b = self.broker
+        if b is None or not b.enabled:
+            return
+        if self.secrets is None:
+            self.secrets = Secrets(None)
+        want: dict[str, AskField] = {}
+        for f in fields:
+            if f.kind in ASK_LABELS and f.kind not in want and f.kind not in b.declined and not f.real_value(self.secrets)[1]:
+                want[f.kind] = AskField(f.kind, ASK_LABELS[f.kind], f.kind)
+        if not want:
+            return
+        t0 = self._clock()
+        answer = await b.ask(list(want.values()), "This screen needs details only you have. The agent will type them in.")
+        if not answer:
+            b.declined.update(want)
+            self._step("wait", True, "user input", t0, "User input skipped")
+            return
+        b.declined.update(k for k in want if k not in answer)
+        for k, v in answer.items():
+            self.secrets.add_user_value(k, v)
 
     async def _fill_form(self, xml: str) -> str | None:
         """Fill every visible empty field once, hide the keyboard, return the fresh dump (None = no form)."""
         fields = fillable_fields(parse_ui_nodes(xml), self._filled)
         if not fields:
             return None
+        await self._ask_user(fields)
         for f in fields:
             await self._fill_field(f)
         if await self._keyboard_shown():

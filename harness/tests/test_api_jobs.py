@@ -30,7 +30,7 @@ def device() -> FakeDevice:
 
 
 def request_json(profiles: list[str], steps: int = 2) -> str:
-    return json.dumps({"run_id": "r1", "package_name": PKG, "profiles": profiles, "journey_steps": steps})
+    return json.dumps({"run_id": "r1", "package_name": PKG, "profiles": profiles, "journey_steps": steps, "interactive": False})
 
 
 def wait_done(client: TestClient, job_id: str) -> dict:

@@ -153,3 +153,10 @@ Shapes are in the route modules named here; the code is the source of truth.
 - `GET /api/runs/{id}/play-risk`, `GET /api/runs/{id}/compare`, `POST /api/runs/{id}/brief` - lab-based Play Store
   risk, comparison with the previous run, and a spoken team brief (`api/app/routes/insights.py`, f20).
 - `GET /api/conversations`, `GET /api/conversations/{id}/messages` - see `contracts/v2-voice-and-users.md` section 3.
+
+## f24 Human-in-the-loop input (append-only)
+
+- Harness `GET /jobs/{id}/live` adds `waiting_for_input: bool` and `input_request: {request_id, fields:[{key,label,kind,secret}], reason, screenshot, timeout_s, started_at} | null` (labels only, never values).
+- Harness `POST /jobs/{id}/input` body `{request_id, values:{key:str}}` or `{request_id, skip:true}`; 409 when no matching open request. Wait is up to 180 s; the paused time does not count toward profile/job timeouts. After two unanswered timeouts the broker stops asking for that job. `HarnessJobRequest.interactive` (default true) disables asking.
+- API `GET /api/runs/{id}/live` passes `waiting_for_input` / `input_request` through. API `POST /api/runs/{id}/input` takes the same body, validates sizes (<= 8 fields, key <= 40, value <= 200 chars), forwards it, and never stores or logs values. 409 stale question, 503 no live phone. Events: "Waiting for you: <labels>", "You filled N fields (hidden)", "Skipped".
+- Pipeline stall watchdog treats `waiting_for_input` as progress.

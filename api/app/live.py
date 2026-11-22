@@ -107,6 +107,54 @@ async def live_state(service: Any, run: Run) -> dict[str, Any]:
     return data
 
 
+MAX_INPUT_FIELDS = 8
+MAX_INPUT_KEY = 40
+MAX_INPUT_VALUE = 200
+
+
+def validate_input(body: Any) -> tuple[str, dict[str, str], bool] | str:
+    """(request_id, values, skip) or an error message that never echoes a value."""
+    if not isinstance(body, dict):
+        return "Send a JSON object."
+    rid = body.get("request_id")
+    if not isinstance(rid, str) or not 0 < len(rid) <= 64:
+        return "request_id is required."
+    skip = body.get("skip") is True
+    raw = body.get("values") or {}
+    if not isinstance(raw, dict) or len(raw) > MAX_INPUT_FIELDS:
+        return "Too many fields."
+    values: dict[str, str] = {}
+    for k, v in raw.items():
+        if not isinstance(k, str) or not isinstance(v, str) or len(k) > MAX_INPUT_KEY or len(v) > MAX_INPUT_VALUE:
+            return "A field is too long or not text."
+        values[k] = v
+    if not skip and not values:
+        return "Fill at least one field, or skip."
+    return rid, values, skip
+
+
+async def forward_input(service: Any, run: Run, rid: str, values: dict[str, str], skip: bool) -> str:
+    """Forward to the harness job; returns 'ok' | 'stale' | 'unavailable'. Values are never stored or logged."""
+    job_id = service._job_ids.get(run.id)
+    if run.status not in ACTIVE or not job_id:
+        return "unavailable"
+    client = service._harness_factory()
+    if client is None or not hasattr(client, "send_input"):
+        return "unavailable"
+    try:
+        ok = await client.send_input(job_id, rid, values, skip)
+    except (httpx.HTTPError, OSError):
+        return "unavailable"
+    finally:
+        await client.aclose()
+    if not ok:
+        return "stale"
+    n = len(values)
+    msg = "Skipped" if skip or not n else f"You filled {n} field{'s' if n != 1 else ''} (hidden)"
+    await service.bus.publish(run.id, "log", msg)
+    return "ok"
+
+
 async def live_frame(service: Any, run: Run) -> bytes | None:
     job_id = service._job_ids.get(run.id)
     if run.status not in ACTIVE or not job_id:

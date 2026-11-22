@@ -41,6 +41,7 @@ class HarnessJobRequest(BaseModel):
     journey_steps: int = 8
     agent_tests: list[AgentTest] = []  # f23, optional
     credentials: TestCredentials | None = None  # f23, optional; never stored
+    interactive: bool = True  # f24: may pause and ask the user live for logins/OTP
 
 
 class HarnessCrash(BaseModel):

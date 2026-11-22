@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass, field
 
 from .adb import Adb
+from .inputs import InputBroker
 from .models import HarnessStep
 
 PNG_MAGIC = b"\x89PNG"
@@ -34,7 +35,14 @@ class LiveState:
     step_ts: float = 0.0
     caption: str | None = None
     running: bool = True
+    broker: InputBroker = field(default_factory=InputBroker, repr=False)
     _task: asyncio.Task[None] | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        self.broker.on_change = self._bump
+
+    def _bump(self) -> None:
+        self.seq += 1
 
     def set_profile(self, profile_id: str) -> None:
         self.profile_id = profile_id
@@ -63,6 +71,8 @@ class LiveState:
             "screen": {"w": self.screen[0], "h": self.screen[1]} if self.screen else None,
             "caption": self.caption,
             "running": self.running,
+            "waiting_for_input": self.broker.waiting,
+            "input_request": self.broker.public(),
             "has_frame": self.frame is not None,
         }
 

@@ -16,6 +16,7 @@ from .adb import Adb
 from .agent import drive, llm_ready
 from .crawler import Crawler, Sleep
 from .heal import DeviceDoctor
+from .inputs import InputBroker, run_unpaused
 from .live import LiveState
 from .models import (
     AgentTest,
@@ -83,6 +84,7 @@ class JobRunner:
         self._tasks: set[asyncio.Task[None]] = set()
         self.doctor = DeviceDoctor(settings, adb, sleep, clock, disk_probe)
         self.live: dict[str, LiveState] = {}
+        self._secrets: dict[str, Secrets] = {}  # per job, memory only (f23/f24)
         self._cleartext: dict[str, tuple[list[tuple[str, str, str]] | None, str | None]] = {}
 
     # ---- health ----
@@ -169,6 +171,20 @@ class JobRunner:
         self.live.pop(job_id, None)
         return True
 
+    def _sec(self, job: HarnessJob, req: HarnessJobRequest) -> Secrets:
+        """One Secrets per job so values the user types live (f24) stay masked and are reused by later profiles."""
+        sec = self._secrets.get(job.job_id)
+        if sec is None:
+            sec = self._secrets[job.job_id] = Secrets(req.credentials)
+        return sec
+
+    def _broker(self, job: HarnessJob) -> InputBroker:
+        return self.live.setdefault(job.job_id, LiveState()).broker
+
+    def submit_input(self, job_id: str, request_id: str, values: dict[str, str] | None, skip: bool) -> bool:
+        state = self.live.get(job_id)
+        return bool(state and state.broker.submit(request_id, values, skip))
+
     def _event(self, job: HarnessJob, msg: str) -> None:
         job.events.append(msg)
         log.info("[%s] %s", job.job_id[:8], msg)
@@ -177,13 +193,15 @@ class JobRunner:
     async def _execute(self, job: HarnessJob, req: HarnessJobRequest) -> None:
         job.status = "running"
         live = self.live.setdefault(job.job_id, LiveState())
+        live.broker.enabled = req.interactive
+        live.broker.on_event = lambda m: self._event(job, m)
         if self.settings.live_enabled:
             live.start(self.adb)
         profiles: list[HarnessProfileResult] = []
         security: list[HarnessSecurityCheck] = []
         agent: list[HarnessAgentTestResult] = []
         try:
-            await asyncio.wait_for(self._run(job, req, profiles, security, agent), self.settings.job_timeout_s)
+            await run_unpaused(self._run(job, req, profiles, security, agent), self.settings.job_timeout_s, live.broker)
             if job.job_id in self._cancel:
                 job.status = "cancelled"
             else:
@@ -206,6 +224,7 @@ class JobRunner:
             d = self.job_dir(job.job_id)
             (d / "result.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
             self._cleartext.pop(job.job_id, None)
+            self._secrets.pop(job.job_id, None)
             self._active = None
 
     async def _uninstall(self, job: HarnessJob, package: str) -> None:
@@ -257,7 +276,7 @@ class JobRunner:
                     problem = "the phone is offline and did not reconnect"
                     break
             try:
-                res = await asyncio.wait_for(self._run_profile(job, req, pid), self.settings.profile_timeout_s)
+                res = await run_unpaused(self._run_profile(job, req, pid), self.settings.profile_timeout_s, self._broker(job))
             except TimeoutError:
                 problem = f"a step hung for over {self.settings.profile_timeout_s}s"
             except Exception as exc:  # noqa: BLE001 - classify below
@@ -306,7 +325,8 @@ class JobRunner:
             crawler = Crawler(
                 self.adb, pkg, req.main_activity, d, pid,
                 cancelled=lambda: job.job_id in self._cancel, sleep=self._sleep, clock=self._clock,
-                on_step=self.live.setdefault(job.job_id, LiveState()).note_step, secrets=Secrets(req.credentials),
+                on_step=self.live.setdefault(job.job_id, LiveState()).note_step, secrets=self._sec(job, req),
+                broker=self._broker(job),
             )  # fmt: skip
             try:
                 j = await crawler.run(req.journey_steps)
@@ -370,7 +390,7 @@ class JobRunner:
                 live.set_profile(f"agent_{t.id}")
                 self._event(job, f"agent test '{t.title}': start")
                 try:
-                    res = await asyncio.wait_for(self._agent_one(job, req, t, client, live), cfg.agent_test_timeout_s)
+                    res = await run_unpaused(self._agent_one(job, req, t, client, live), cfg.agent_test_timeout_s, live.broker)
                 except TimeoutError:
                     res = HarnessAgentTestResult(
                         id=t.id, title=t.title, condition=t.condition, reason="This test took too long and was stopped."
@@ -389,7 +409,7 @@ class JobRunner:
     ) -> HarnessAgentTestResult:
         """Log in on baseline, then drop to a flaky network and keep using the app, recording what breaks."""
         cfg = self.settings
-        sec = Secrets(req.credentials)
+        sec = self._sec(job, req)
         pm = ProfileManager(self.adb, self._sleep, cfg.device_kind, tc=cfg.tc_path, ip=cfg.ip_path, sudo=cfg.sudo_path)
         pkg = req.package_name
         live.set_profile(f"agent_{OFFLINE_TEST.id}")
@@ -402,10 +422,11 @@ class JobRunner:
             crawler = Crawler(
                 self.adb, pkg, req.main_activity, self.job_dir(job.job_id), f"agent_{OFFLINE_TEST.id}",  # type: ignore[arg-type]
                 cancelled=lambda: job.job_id in self._cancel, sleep=self._sleep, clock=self._clock,
-                on_step=live.note_step, secrets=sec,
+                on_step=live.note_step, secrets=sec, broker=live.broker,
             )  # fmt: skip
-            login = await asyncio.wait_for(
-                drive(crawler, LOGIN_TEST, cfg, client, live.set_caption, secrets=sec), cfg.agent_test_timeout_s
+            login = await run_unpaused(
+                drive(crawler, LOGIN_TEST, cfg, client, live.set_caption, secrets=sec, broker=live.broker),
+                cfg.agent_test_timeout_s, live.broker,
             )
             if login.passed is not True:
                 failed.steps, failed.screens = login.steps, login.screens
@@ -414,9 +435,9 @@ class JobRunner:
             self._event(job, "offline-after-login phase: logged in; dropping to a flaky network")
             await pm.apply("flaky_network")
             applied = True
-            return await asyncio.wait_for(
-                drive(crawler, OFFLINE_TEST, cfg, client, live.set_caption, secrets=sec, launch=False),
-                cfg.agent_test_timeout_s,
+            return await run_unpaused(
+                drive(crawler, OFFLINE_TEST, cfg, client, live.set_caption, secrets=sec, launch=False, broker=live.broker),
+                cfg.agent_test_timeout_s, live.broker,
             )
         except TimeoutError:
             failed.reason = "The offline phase took too long and was stopped; no verdict."
@@ -449,9 +470,9 @@ class JobRunner:
             crawler = Crawler(
                 self.adb, pkg, req.main_activity, self.job_dir(job.job_id), f"agent_{t.id}",  # type: ignore[arg-type]
                 cancelled=lambda: job.job_id in self._cancel, sleep=self._sleep, clock=self._clock,
-                on_step=live.note_step, secrets=Secrets(req.credentials),
+                on_step=live.note_step, secrets=self._sec(job, req), broker=live.broker,
             )  # fmt: skip
-            return await drive(crawler, t, cfg, client, live.set_caption, secrets=Secrets(req.credentials))
+            return await drive(crawler, t, cfg, client, live.set_caption, secrets=self._sec(job, req), broker=live.broker)
         finally:
             try:
                 await pm.revert(t.condition)

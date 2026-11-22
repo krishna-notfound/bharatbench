@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { ChevronsRight, Smartphone } from "lucide-react";
 import { ActionCaption } from "@/components/live/action-caption";
 import { TapRipple } from "@/components/live/tap-ripple";
-import { captionFor, liveFrameUrl, profileLabel, useLive } from "@/lib/live";
+import { InputCard } from "@/components/live/input-card";
+import { captionFor, liveFrameUrl, profileLabel, useLive, useNeedsAttention } from "@/lib/live";
 
 export interface PhoneRipple {
   key: string;
@@ -66,6 +67,7 @@ export function PhoneFrame({
  */
 export function LivePhone({ runId, active }: { runId: string; active: boolean }) {
   const live = useLive(runId, active);
+  useNeedsAttention(!!live?.input_request);
   const [entered, setEntered] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [shown, setShown] = useState<string | null>(null);
@@ -100,7 +102,12 @@ export function LivePhone({ runId, active }: { runId: string; active: boolean })
     tap && screen && stepKey
       ? { key: stepKey, xPct: (tap.x / screen.w) * 100, yPct: (tap.y / screen.h) * 100 }
       : null;
-  const caption = live?.running === false && !shown ? null : captionFor(live?.action, live?.target);
+  const request = live?.input_request ?? null;
+  const caption = request
+    ? "Waiting for you…"
+    : live?.running === false && !shown
+      ? null
+      : captionFor(live?.action, live?.target);
   const badge = live?.profile_id ? profileLabel(live.profile_id) : null;
   const stepText = live?.step_index != null ? `Step ${live.step_index + 1}` : null;
   const empty = live && !live.running && live.reason ? live.reason : "Waiting for the test phone…";
@@ -130,7 +137,7 @@ export function LivePhone({ runId, active }: { runId: string; active: boolean })
         aria-label="Live test phone"
         aria-hidden={minimized}
         data-live-open={entered && !minimized ? "true" : "false"}
-        className={`fixed z-40 transition-[transform,opacity] duration-[650ms] ease-[cubic-bezier(0.34,1.4,0.5,1)] motion-reduce:transition-none max-md:inset-x-0 max-md:bottom-0 max-md:rounded-t-3xl max-md:border-t max-md:border-border max-md:bg-card/95 max-md:pt-3 max-md:pb-4 max-md:shadow-[0_-12px_40px_rgba(124,92,255,0.25)] max-md:backdrop-blur md:top-24 md:right-4 ${
+        className={`fixed z-40 transition-[transform,opacity] duration-[650ms] ease-[cubic-bezier(0.34,1.4,0.5,1)] motion-reduce:transition-none max-md:inset-x-0 max-md:bottom-0 max-md:rounded-t-3xl max-md:border-t max-md:border-border max-md:bg-card/95 max-md:pt-3 max-md:pb-4 max-md:shadow-[0_-12px_40px_rgba(124,92,255,0.25)] max-md:backdrop-blur max-md:max-h-[88vh] max-md:overflow-y-auto md:top-24 md:right-4 md:max-h-[calc(100vh-7rem)] md:overflow-y-auto ${
           entered && !minimized
             ? "translate-x-0 translate-y-0 opacity-100"
             : "pointer-events-none opacity-0 max-md:translate-y-full md:translate-x-[125%]"
@@ -161,6 +168,7 @@ export function LivePhone({ runId, active }: { runId: string; active: boolean })
               empty={empty}
             />
           </div>
+          {request && <InputCard key={request.request_id} runId={runId} request={request} />}
         </div>
       </aside>
     </>

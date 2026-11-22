@@ -22,6 +22,7 @@ import httpx
 
 from .crawler import Crawler
 from .forms import adb_text
+from .inputs import KINDS, AskField, InputBroker
 from .models import AgentTest, HarnessAgentTestResult
 from .parsers import UiNode, is_denied, parse_ui_nodes, ui_hash
 from .secrets import Secrets
@@ -32,13 +33,14 @@ log = logging.getLogger("harness.agent")
 MAX_STEPS = 8
 MAX_NODES = 40
 CALL_TIMEOUT_S = 25.0
-ACTIONS = ("tap", "fill", "back", "done", "fail")
+ACTIONS = ("tap", "fill", "back", "done", "fail", "ask")
+MAX_ASKS = 2
 
 SYSTEM_PROMPT = (
     "You drive an Android app on a phone to check one test. You see the visible UI nodes as lines "
     "'index|class|text|hint|resource-id|flags'. Reply with strict JSON only, one action per reply: "
     '{"action":"tap"|"fill"|"back"|"done"|"fail","node":<index, for tap/fill>,"text":"<text to type, for fill>",'
-    '"met":true|false (required with done),"reason":"short plain sentence"}. Use "done" with "met":true only when '
+    '"met":true|false (required with done),"reason":"short plain sentence"}. When the screen needs something only the human has (a login id, password, OTP, PIN, a code you cannot know) and you were not given it, reply instead {"action":"ask","fields":[{"label":"Email","kind":"email"|"username"|"phone"|"password"|"otp"|"pin"|"text"}],"reason":"why"}; the human answers and you then type the tokens you are given. Never guess such values. Use "done" with "met":true only when '
     'the success check is visibly met (reason says what you saw); if the check is NOT met use "fail" '
     '(or "done" with "met":false). Use "fail" when the app clearly does not behave as the success check requires '
     'or is stuck/broken. '
@@ -80,12 +82,24 @@ def parse_action(text: str, n_nodes: int) -> dict[str, Any] | None:
         return None
     if act == "fill" and not isinstance(obj.get("text"), str):
         return None
+    asks: list[dict[str, str]] = []
+    if act == "ask":
+        raw = obj.get("fields")
+        if not isinstance(raw, list) or not raw:
+            return None
+        for item in raw[:4]:
+            if not isinstance(item, dict):
+                return None
+            kind = item.get("kind") if item.get("kind") in KINDS else "text"
+            label = str(item.get("label") or kind)[:40]
+            asks.append({"label": label, "kind": str(kind)})
     return {
         "action": act,
         "node": node,
         "text": obj.get("text"),
         "met": obj.get("met") if isinstance(obj.get("met"), bool) else None,
         "reason": str(obj.get("reason") or "")[:200],
+        "fields": asks,
     }
 
 
@@ -130,6 +144,7 @@ async def drive(
     *,
     secrets: Secrets | None = None,
     launch: bool = True,
+    broker: InputBroker | None = None,
 ) -> HarnessAgentTestResult:
     """Run the goal loop on an already-conditioned device. Always returns a result, never raises.
 
@@ -137,7 +152,7 @@ async def drive(
     `launch=False` continues in the app that is already open (used after logging in)."""
     res = HarnessAgentTestResult(id=test.id, title=test.title, condition=test.condition)
     sec = secrets or Secrets(None)
-    system = SYSTEM_PROMPT + (" " + sec.prompt_addendum() if sec.available else "")
+    asks_left = MAX_ASKS if broker is not None else 0
 
     def finish(passed: bool | None, reason: str) -> HarnessAgentTestResult:
         res.passed, res.reason = passed, reason
@@ -156,6 +171,8 @@ async def drive(
         for _ in range(MAX_STEPS):
             if crawler.cancelled():
                 return finish(None, "Stopped before a verdict.")
+            addendum = sec.prompt_addendum()
+            system = SYSTEM_PROMPT + (" " + addendum if addendum else "")
             listing, nodes = render_nodes(parse_ui_nodes(xml))
             listing = sec.tokenize(listing)
             user = (
@@ -175,6 +192,22 @@ async def drive(
             if kind == "fail":
                 return finish(False, reason or "Success check not met.")
             t0 = crawler._clock()
+            if kind == "ask":
+                if broker is None or asks_left <= 0 or not broker.enabled:
+                    history.append("asking the user is not available; continue without it")
+                    continue
+                asks_left -= 1
+                caption("Waiting for you…")
+                fields = [AskField(f"{a['kind']}_{i}" if a["kind"] == "text" else a["kind"], a["label"], a["kind"]) for i, a in enumerate(act["fields"])]
+                answer = await broker.ask(fields, reason or "The agent needs details only you have.")
+                if not answer:
+                    crawler._step("wait", True, "user input", t0, "User input skipped")
+                    history.append("user skipped the request; try another path or go back")
+                else:
+                    toks = [sec.add_user_value(k, v) for k, v in answer.items()]
+                    crawler._step("wait", True, "user input", t0, f"You filled {len(answer)} field(s) (hidden)")
+                    history.append("user provided values; type these tokens: " + ", ".join(toks))
+                continue
             if kind == "back":
                 caption(f"Agent: going back — {reason}")
                 rc, _, _ = await crawler.adb.shell("input", "keyevent", "KEYCODE_BACK", timeout=15)
