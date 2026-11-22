@@ -286,3 +286,23 @@ async def test_client_delete_tolerates_404_and_raises_others():
     with pytest.raises(httpx.HTTPStatusError):
         await c.delete("busy")
     await c.aclose()
+
+
+async def test_stop_keeps_completed_conditions(make_service, fake_analyzer, tmp_path):
+    result = HarnessResult(
+        job_id="j1", device="d",
+        profiles=[HarnessProfileResult(profile_id="baseline", applied=True, launched=True)],
+    )
+    h = ScriptHarness(result=result)
+    service = await make_service(h)
+    run = await service.create_run(apk(tmp_path), "up.apk", ["baseline", "budget_2gb", "flaky_network"])
+    for _ in range(300):
+        if (await service.get_run(run.id)).status == "running":
+            break
+        await asyncio.sleep(0.01)
+    await service.cancel_run(run.id)
+    done = await wait_terminal(service, run.id)
+    assert done.status == "done" and done.summary.runtime_executed is True
+    reason = done.summary.runtime_skipped_reason
+    assert reason.startswith("Stopped early after 1 of 3 conditions (")
+    assert "Not tested:" in reason and h.cancelled and h.deleted == "j1"

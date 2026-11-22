@@ -1,19 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { ArrowLeft, Download, Loader2, XCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef } from "react";
+import { ArrowLeft, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Orb, ORB_LABEL, orbStateFromRun } from "@/components/orb/orb";
-import { Button, buttonVariants } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/shell/states";
 import { useFetch } from "@/components/shell/use-fetch";
@@ -23,7 +16,7 @@ import { StepReplay } from "@/components/live/step-replay";
 import { ReportInsights } from "@/components/report/report-insights";
 import { ScorePanel } from "@/components/runs/score-panel";
 import { ActivityLog, CompactSteps } from "@/components/runs/timeline";
-import { cancelRun, getFindings, getRun, reportUrl } from "@/lib/api";
+import { getFindings, getRun, reportUrl, retryRun } from "@/lib/api";
 import { runTitle } from "@/lib/format";
 import { TERMINAL_STATUSES, type Finding, type Run, type RunEvent, type Severity } from "@/lib/types";
 import { useRunEvents } from "@/lib/ws";
@@ -55,8 +48,7 @@ function plural(n: number, word: string): string {
 /** Plain-language sentence computed only from the run summary and findings. */
 export function summarySentence(run: Run, findings: Finding[] | null): string | null {
   const s = run.summary;
-  if (run.status === "failed") return "This test didn't finish, so there are no results to show.";
-  if (run.status === "cancelled") return "This test was cancelled before it finished.";
+  if (run.status === "failed" || run.status === "cancelled") return "This test didn't finish — I'm running it again.";
   if (!s) return null;
   const scan = s.runtime_executed ? "" : " in the APK scan";
   if (s.total_findings === 0) {
@@ -87,8 +79,8 @@ export function RunDetail({ runId }: { runId: string }) {
     (r) => (r && TERMINAL_STATUSES.includes(r.status) ? null : 6000),
   );
   const findings = useFetch(() => getFindings(runId));
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
+  const router = useRouter();
+  const retried = useRef(false);
 
   const { refresh: refreshRun } = run;
   const { refresh: refreshFindings } = findings;
@@ -100,19 +92,16 @@ export function RunDetail({ runId }: { runId: string }) {
   const r = run.data;
   const sentence = useMemo(() => (r ? summarySentence(r, findings.data) : null), [r, findings.data]);
 
-  async function doCancel() {
-    setCancelling(true);
-    try {
-      await cancelRun(runId);
-      toast.success("Test cancelled");
-      setConfirmOpen(false);
-      void refreshRun();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not cancel the test");
-    } finally {
-      setCancelling(false);
-    }
-  }
+  const unfinished = r?.status === "failed" || r?.status === "cancelled";
+  useEffect(() => {
+    if (!unfinished || retried.current) return;
+    retried.current = true;
+    retryRun(runId)
+      .then((next) => router.replace(`/runs/${next.id}`))
+      .catch(() => {
+        retried.current = false;
+      });
+  }, [unfinished, runId, router]);
 
   const back = (
     <Link
@@ -175,11 +164,6 @@ export function RunDetail({ runId }: { runId: string }) {
           </div>
           <CompactSteps status={r.status} runtimeSkipped={runtimeSkipped} />
           <div className="flex flex-wrap justify-center gap-2">
-            {active && (
-              <Button variant="outline" className="h-9 rounded-full px-4" onClick={() => setConfirmOpen(true)}>
-                <XCircle /> Cancel test
-              </Button>
-            )}
             <a
               href={reportUrl(runId)}
               target="_blank"
@@ -197,7 +181,7 @@ export function RunDetail({ runId }: { runId: string }) {
           </div>
         </div>
 
-        {r.error && (
+        {r.error && !unfinished && (
           <p
             role="alert"
             className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
@@ -233,26 +217,6 @@ export function RunDetail({ runId }: { runId: string }) {
       {TERMINAL_STATUSES.includes(r.status) && !runtimeSkipped && <StepReplay runId={runId} />}
 
       <ActivityLog events={stream.events} connected={stream.connected} finished={stream.finished} />
-
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cancel this test?</DialogTitle>
-            <DialogDescription>
-              I&apos;ll stop right away and mark it as cancelled. You can start a new test with the same APK any time.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={cancelling}>
-              Keep running
-            </Button>
-            <Button variant="destructive" onClick={doCancel} disabled={cancelling}>
-              {cancelling && <Loader2 className="animate-spin" />}
-              Cancel test
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

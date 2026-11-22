@@ -14,7 +14,6 @@ export const TOOL_LABEL: Record<string, string> = {
   get_run_status: "Checked on a test",
   list_findings: "Looked at the issues",
   explain_finding: "Read an issue closely",
-  cancel_run: "Stopped a test",
 };
 
 export function toolLabel(name: string): string {

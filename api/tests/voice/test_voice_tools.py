@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from voice_fakes import FakeRunService, make_run
 
-from app.voice.tools import ToolContext, dispatch
+from app.voice.tools import TOOL_SCHEMAS, ToolContext, dispatch
 
 
 async def test_start_test_reruns_most_recent_run_with_profiles(service: FakeRunService) -> None:
@@ -66,15 +66,17 @@ async def test_explain_finding_truncates_evidence_and_unknown_is_error(service: 
     assert "error" in await dispatch(service, "explain_finding", {"finding_id": "zzz"}, ToolContext())
 
 
-async def test_get_status_cancel_and_missing(service: FakeRunService) -> None:
+async def test_get_status_and_missing(service: FakeRunService) -> None:
     status = await dispatch(service, "get_run_status", {"run_id": "run1"}, ToolContext())
     assert status["status"] == "done" and status["summary"]["total_findings"] == 2
-    assert (await dispatch(service, "cancel_run", {"run_id": "run1"}, ToolContext()))["status"] == "done"  # finished
-    service.runs.append(make_run("live1", "running"))
-    assert (await dispatch(service, "cancel_run", {"run_id": "live1"}, ToolContext()))["status"] == "cancelled"
     assert "error" in await dispatch(service, "get_run_status", {"run_id": "nope"}, ToolContext())
 
 
 async def test_missing_required_arg_and_unknown_tool_return_errors(service: FakeRunService) -> None:
     assert "error" in await dispatch(service, "get_run_status", {}, ToolContext())
     assert "error" in await dispatch(service, "rm_rf", {}, ToolContext())
+
+
+async def test_cancel_run_tool_is_removed(service: FakeRunService) -> None:
+    assert "cancel_run" not in {t["function"]["name"] for t in TOOL_SCHEMAS}
+    assert "error" in await dispatch(service, "cancel_run", {"run_id": "run1"}, ToolContext())

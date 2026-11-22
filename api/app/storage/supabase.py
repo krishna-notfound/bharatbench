@@ -94,6 +94,9 @@ class SupabaseStorage:
             json=[{"id": f.id, "run_id": run_id, "data": f.model_dump(mode="json")} for f in findings],
         )
 
+    async def delete_findings(self, run_id: str) -> None:
+        await self._write("DELETE", "findings", params={"run_id": f"eq.{run_id}"})
+
     async def list_findings(self, run_id: str) -> list[Finding]:
         rows = await self._select("findings", {"select": "data", "run_id": f"eq.{run_id}", "order": "ord.asc"})
         return [Finding.model_validate(r["data"]) for r in rows]

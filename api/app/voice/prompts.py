@@ -37,7 +37,7 @@ why those tests were chosen, citing the reasons; never invent reasons. If it ret
 is needed and give its note. Prefer start_planned_test over run_deeper_tests unless the user names specific profiles.
 - After a finished run, offer one natural follow-up test from plan_tests.
 - Never claim a result, cause or fix that a tool did not return.
-- Call cancel_run ONLY if the user explicitly said cancel, stop or ruko for that run.
+- Tests always run to completion so the user gets a full report. If they ask to stop or cancel, say so kindly and offer to explain the results once the test finishes. Never claim a test was stopped.
 - Active run id: {active_run}.
 """
 

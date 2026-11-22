@@ -76,12 +76,6 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         ["finding_id"],
     ),
     _fn(
-        "cancel_run",
-        "Cancel a run. Only when the user explicitly asked to cancel or stop it.",
-        {"run_id": {"type": "string"}},
-        ["run_id"],
-    ),
-    _fn(
         "get_report",
         "Compact full report of a run: app, status, score, profiles run and whether each applied, top findings with "
         "cause and fix, counts. Call this first to summarise a finished test.",
@@ -254,16 +248,6 @@ async def _dispatch(service: RunService, name: str, args: dict[str, Any], ctx: T
             {"kind": e["kind"], "excerpt": (e.get("excerpt") or "")[:300]} for e in data["evidence"]
         ]
         return data
-    if name == "cancel_run":
-        target = await _resolve_run(service, args["run_id"], ctx)
-        if target is None:
-            return {"error": f"run {args['run_id']} not found; use an id from list_runs"}
-        if target.status in ("done", "failed", "cancelled"):
-            return {"run_id": target.id, "status": target.status, "note": "run already finished; nothing to cancel"}
-        run = await service.cancel_run(target.id)
-        if run is None:
-            return {"error": f"run {args['run_id']} not found"}
-        return {"run_id": run.id, "status": run.status}
     return {"error": f"unknown tool {name}"}
 
 

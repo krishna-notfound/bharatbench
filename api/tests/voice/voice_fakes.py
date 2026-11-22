@@ -99,7 +99,7 @@ class FakeRunService:
     async def cancel_run(self, run_id: str) -> Run | None:
         self.cancel_calls.append(run_id)
         run = await self.get_run(run_id)
-        return run.model_copy(update={"status": "cancelled"}) if run else None
+        return run  # graceful stop: the run keeps running until it finishes with partial results
 
     def subscribe(self, run_id: str) -> FakeSubscription:
         return FakeSubscription([e for e in self.events if e.run_id == run_id])

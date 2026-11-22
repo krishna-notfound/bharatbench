@@ -82,6 +82,29 @@ def _profile_label(profile_id: str | None) -> str:
         return f"'{profile_id}'"
 
 
+STOP_BEFORE_DEVICE = "Stopped before the device test. Static results are below."
+
+
+def _stop_note(profile_ids: list[str], partial: HarnessResult | None) -> str:
+    """Human note for a user stop: what finished and what was not tested."""
+    done = [p.profile_id for p in (partial.profiles if partial else []) if p.applied]
+    total = len(profile_ids)
+    remaining = [pid for pid in profile_ids if pid not in done]
+
+    def names(ids: list[str]) -> str:
+        return ", ".join(_profile_label(i).strip("'") for i in ids)
+
+    if not done:
+        return (
+            f"Stopped early before any of the {total} conditions finished. Not tested: {names(remaining)}. "
+            "Static results are below."
+        )
+    note = f"Stopped early after {len(done)} of {total} conditions ({names(done)})."
+    if remaining:
+        note += f" Not tested: {names(remaining)}."
+    return note
+
+
 def _stall_reason(profile_id: str | None) -> str:
     return (
         f"The test phone stopped responding during {_profile_label(profile_id)} and we stopped that test. "
@@ -209,7 +232,9 @@ async def _run_harness(
     art_dir: Path,
     job_ids: dict[str, str],
     journey_steps: int | None = None,
+    stop_flags: set[str] | None = None,
 ) -> tuple[Run, HarnessResult]:
+    stop_flags = stop_flags if stop_flags is not None else set()
     if client is None:
         raise _Skip("Harness not configured (HARNESS_URL unset); runtime testing skipped.")
     job_id: str | None = None
@@ -219,6 +244,8 @@ async def _run_harness(
         if isinstance(free, int | float) and free < MIN_DISK_MB:
             await bus.publish(run.id, "log", f"Test lab disk is low ({free:.0f} MB free)")
             raise _Skip("The test lab is cleaning up, try again shortly. Static results are below.")
+        if run.id in stop_flags:
+            raise _Skip(STOP_BEFORE_DEVICE)
         run = await _set_status(storage, bus, run, "provisioning")
         assert run.app is not None
         try:
@@ -270,6 +297,9 @@ async def _run_harness(
                 )
             if job.status == "done":
                 break
+            if run.id in stop_flags:
+                partial = await _salvage(client, bus, run.id, job_id, art_dir)
+                raise _Skip(_stop_note(run.profile_ids, partial), partial)
             if job.status in ("failed", "cancelled"):
                 detail = job.error or "no detail"
                 raise _Skip(
@@ -322,8 +352,10 @@ async def run_pipeline(
     harness_factory: HarnessFactory,
     job_ids: dict[str, str] | None = None,
     journey_steps: int | None = None,
+    stop_flags: set[str] | None = None,
 ) -> None:
     job_ids = job_ids if job_ids is not None else {}
+    stop_flags = stop_flags if stop_flags is not None else set()
     client: HarnessLike | None = None
     run = await storage.get_run(run_id)
     apk_path_str = await storage.get_apk_path(run_id)
@@ -347,19 +379,25 @@ async def run_pipeline(
         runtime_executed = False
         skipped_reason: str | None = None
         try:
+            if run_id in stop_flags:
+                raise _Skip(STOP_BEFORE_DEVICE)
             client = harness_factory()
             run, result = await _run_harness(
                 client, storage, bus, run, apk_path, data_dir / "runs" / run_id / "artifacts", job_ids,
-                journey_steps,
+                journey_steps, stop_flags,
             )
             collected.extend(runtime_findings(run_id, result, package=app_info.package_name))
             runtime_executed = True
         except _Skip as skip:
             skipped_reason = str(skip)
-            await bus.publish(run_id, "log", f"Runtime testing skipped: {skipped_reason}")
+            if run_id in stop_flags:
+                await bus.publish(run_id, "log", skipped_reason)
+            else:
+                await bus.publish(run_id, "log", f"Runtime testing skipped: {skipped_reason}")
             if skip.partial is not None and skip.partial.profiles:
                 with contextlib.suppress(Exception):
                     collected.extend(runtime_findings(run_id, skip.partial, package=app_info.package_name))
+                runtime_executed = run_id in stop_flags  # a user stop that kept finished conditions did run
 
         run = await _set_status(storage, bus, run, "scoring")
         baseline_ran = runtime_executed and "baseline" in run.profile_ids
@@ -373,7 +411,7 @@ async def run_pipeline(
         run = await _set_status(storage, bus, run, "done", summary=summary)
         await bus.publish(run_id, "done", "Run complete", {"summary": summary.model_dump(mode="json")})
     except asyncio.CancelledError:
-        await asyncio.shield(_on_cancel(storage, bus, run, client, job_ids.get(run_id)))
+        # server shutdown / watchdog: leave the run exactly as it is; startup recovery resumes it
         raise
     except Exception as exc:  # any failure must leave the run terminal
         log.exception("Pipeline failed for run %s", run_id)
@@ -381,17 +419,6 @@ async def run_pipeline(
         run = await _set_status(storage, bus, run, "failed", error=message)
         await bus.publish(run_id, "error", message, {"error": message})
     finally:
+        stop_flags.discard(run_id)
         if client is not None:
             await client.aclose()
-
-
-async def _on_cancel(
-    storage: Storage, bus: EventBus, run: Run, client: HarnessLike | None, job_id: str | None
-) -> None:
-    if client is not None and job_id:
-        try:
-            await client.cancel(job_id)
-        except (httpx.HTTPError, OSError) as exc:
-            log.warning("Harness cancel failed: %s", exc)
-    await _set_status(storage, bus, run, "cancelled")
-    await bus.publish(run.id, "error", "Run cancelled", {"error": "cancelled"})

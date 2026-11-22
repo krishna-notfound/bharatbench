@@ -121,8 +121,8 @@ export function RunsList() {
           className="mx-auto block rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
         >
           {showAll
-            ? "Hide cancelled & failed"
-            : `Show cancelled & failed (${data.filter((r) => STOPPED.includes(r.status)).length})`}
+            ? "Hide tests that didn't finish"
+            : `Show tests that didn't finish (${data.filter((r) => STOPPED.includes(r.status)).length})`}
         </button>
       )}
     </div>

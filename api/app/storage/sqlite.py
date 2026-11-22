@@ -84,6 +84,10 @@ class SqliteStorage:
         )
         await self.db.commit()
 
+    async def delete_findings(self, run_id: str) -> None:
+        await self.db.execute("DELETE FROM findings WHERE run_id = ?", (run_id,))
+        await self.db.commit()
+
     async def list_findings(self, run_id: str) -> list[Finding]:
         async with self.db.execute(
             "SELECT data FROM findings WHERE run_id = ? ORDER BY ord", (run_id,)

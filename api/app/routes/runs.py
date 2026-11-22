@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from pathlib import Path
 from typing import get_args
@@ -101,6 +102,33 @@ async def list_findings(run_id: str) -> list[Finding]:
 async def list_events(run_id: str, after_seq: int = 0) -> list[RunEvent]:
     await _require_run(run_id)
     return await get_run_service().list_events(run_id, after_seq)
+
+
+_retry_lock = asyncio.Lock()
+
+
+@router.post("/{run_id}/retry")
+async def retry_run(run_id: str) -> Run:
+    """Idempotent: re-run a run that ended cancelled/failed; repeated calls return the same new run."""
+    service = get_run_service()
+    async with _retry_lock:
+        source = await _require_run(run_id)
+        for ev in reversed(await service.list_events(run_id)):
+            existing = (ev.data or {}).get("retry_run_id")
+            if existing:
+                found = await service.get_run(str(existing))
+                if found is not None:
+                    return found
+        if source.status not in ("cancelled", "failed"):
+            return source
+        try:
+            new = await service.rerun(run_id, source.profile_ids)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        await service.bus.publish(
+            run_id, "log", "Retrying this test automatically", {"retry_run_id": new.id}
+        )
+        return new
 
 
 @router.post("/{run_id}/cancel")

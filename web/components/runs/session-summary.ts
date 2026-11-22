@@ -3,8 +3,8 @@ import { TERMINAL_STATUSES, type Run } from "@/lib/types";
 
 /** Plain-language one-liner for a session row. Derived only from real run data. */
 export function sessionLine(run: Run): string {
-  if (run.status === "failed") return "Something went wrong during this test";
-  if (run.status === "cancelled") return "Cancelled before it finished";
+  if (run.status === "failed") return "Didn't finish";
+  if (run.status === "cancelled") return "Didn't finish";
   if (!TERMINAL_STATUSES.includes(run.status)) {
     return `${STATUS_LABEL[run.status]}…`;
   }

@@ -197,8 +197,9 @@ async def test_harness_unreachable_still_done_with_static(make_service, fake_ana
     assert harness.closed
 
 
-async def test_cancel_cancels_harness_job(make_service, fake_analyzer, tmp_path, monkeypatch):
+async def test_stop_is_graceful_and_ends_done(make_service, fake_analyzer, tmp_path, monkeypatch):
     harness = FakeHarness()
+    monkeypatch.setattr(pipeline, "SALVAGE_WAIT_S", 0.3)
     harness.polls = -10_000  # stays "running" for a long time
     monkeypatch.setattr(pipeline, "POLL_INTERVAL_S", 0.05)
     service = await make_service(harness)
@@ -208,9 +209,41 @@ async def test_cancel_cancels_harness_job(make_service, fake_analyzer, tmp_path,
             break
         await asyncio.sleep(0.01)
     result = await service.cancel_run(run.id)
-    assert result.status == "cancelled"
+    assert result.status == "running"  # returns immediately; the run finishes shortly after
+    done = await wait_terminal(service, run.id)
+    assert done.status == "done"
     assert harness.cancelled
-    assert (await service.list_events(run.id))[-1].type == "error"
+    assert done.summary.runtime_skipped_reason.startswith("Stopped early")
+    msgs = [e.message for e in await service.list_events(run.id) if e.type == "log"]
+    assert any("Stop requested" in m for m in msgs)
+    assert len(await service.list_findings(run.id)) >= 2  # static + partial runtime findings kept
+
+
+async def test_stop_on_finished_run_is_unchanged(make_service, fake_analyzer, tmp_path):
+    service = await make_service(FakeHarness())
+    run = await service.create_run(write_apk(tmp_path), "up.apk", ["baseline"])
+    done = await wait_terminal(service, run.id)
+    again = await service.cancel_run(run.id)
+    assert again.status == "done" and again.updated_at == done.updated_at
+
+
+async def test_stop_during_static_skips_device(make_service, fake_analyzer, tmp_path, monkeypatch):
+    harness = FakeHarness()
+    service = await make_service(harness)
+    real = pipeline.asyncio.to_thread
+
+    async def slow_to_thread(fn, *a, **k):
+        await asyncio.sleep(0.2)
+        return await real(fn, *a, **k)
+
+    monkeypatch.setattr(pipeline.asyncio, "to_thread", slow_to_thread)
+    run = await service.create_run(write_apk(tmp_path), "up.apk", ["baseline"])
+    await asyncio.sleep(0.05)
+    await service.cancel_run(run.id)
+    done = await wait_terminal(service, run.id)
+    assert done.status == "done" and done.summary.runtime_executed is False
+    assert done.summary.runtime_skipped_reason == "Stopped before the device test. Static results are below."
+    assert not harness.cancelled and harness.polls == 0
 
 
 async def test_recover_orphans_marks_failed(make_service, tmp_path):

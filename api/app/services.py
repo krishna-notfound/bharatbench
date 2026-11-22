@@ -16,6 +16,8 @@ TERMINAL = ("done", "failed", "cancelled")
 STUCK_AFTER_S = 25 * 60  # no status change for this long: the pipeline is wedged
 WATCHDOG_INTERVAL_S = 60.0
 RESTART_REASON = "The server restarted while this run was in progress, so it was stopped. Please start it again."
+MAX_RESUMES = 2
+RESUME_NOTE = "The server was updated during this test — restarting it now so you get a full report"
 STUCK_REASON = "This run stopped making progress and was ended automatically. Please start it again."
 
 
@@ -29,17 +31,31 @@ class RunServiceImpl:
         self._harness_factory = harness_factory
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._job_ids: dict[str, str] = {}
+        self._stop_flags: set[str] = set()
         self._watchdog: asyncio.Task[None] | None = None
 
     async def recover_orphans(self) -> int:
-        """Finish every run a previous process left non-terminal, with a clear reason and log events."""
+        """Resume every run a previous process left non-terminal (max MAX_RESUMES times, then fail humanely)."""
         count = 0
         for run in await self.storage.list_runs():
-            if run.status not in TERMINAL:
+            if run.status in TERMINAL:
+                continue
+            count += 1
+            events = await self.storage.list_events(run.id)
+            resumes = sum(1 for e in events if (e.data or {}).get("resumed"))
+            apk = await self.storage.get_apk_path(run.id)
+            if resumes >= MAX_RESUMES or apk is None or not Path(apk).exists():
                 await self._force_finish(
                     run, RESTART_REASON, "Recovery: the server restarted while this run was in progress"
                 )
-                count += 1
+                continue
+            await self._stop_harness_job(run.id)
+            await self.bus.publish(run.id, "log", RESUME_NOTE, {"resumed": resumes + 1})
+            await self.storage.delete_findings(run.id)
+            queued = run.model_copy(update={"status": "queued", "summary": None, "updated_at": datetime.now(UTC)})
+            await self.storage.update_run(queued)
+            await self.bus.publish(run.id, "status", "Status: queued", {"status": "queued"})
+            self._launch(run.id, Path(apk))
         return count
 
     async def _force_finish(self, run: Run, reason: str, log_line: str) -> None:
@@ -133,6 +149,10 @@ class RunServiceImpl:
         )
         await self.storage.create_run(run, str(apk))
         await self.bus.publish(run_id, "status", "Status: queued", {"status": "queued"})
+        self._launch(run_id, apk, journey_steps)
+        return run
+
+    def _launch(self, run_id: str, apk: Path, journey_steps: int | None = None) -> None:
         task = asyncio.create_task(
             run_pipeline(
                 run_id,
@@ -141,12 +161,12 @@ class RunServiceImpl:
                 data_dir=self.data_dir,
                 harness_factory=self._harness_factory,
                 job_ids=self._job_ids,
+                stop_flags=self._stop_flags,
                 journey_steps=journey_steps,
             )
         )
         self._tasks[run_id] = task
         task.add_done_callback(lambda _t: self._tasks.pop(run_id, None))
-        return run
 
     async def get_run(self, run_id: str) -> Run | None:
         return await self.storage.get_run(run_id)
@@ -162,18 +182,16 @@ class RunServiceImpl:
         return await self.storage.list_events(run_id, after_seq)
 
     async def cancel_run(self, run_id: str) -> Run | None:
-        task = self._tasks.get(run_id)
-        if task is not None and not task.done():
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+        """Graceful stop: flag the pipeline so it wraps up with the results collected so far."""
         run = await self.storage.get_run(run_id)
-        if run is not None and task is not None and run.status not in TERMINAL:
-            # cancelled before the pipeline body started: record the terminal state here
-            run = run.model_copy(update={"status": "cancelled", "updated_at": datetime.now(UTC)})
-            await self.storage.update_run(run)
-            await self.bus.publish(run_id, "status", "Status: cancelled", {"status": "cancelled"})
-            await self.bus.publish(run_id, "error", "Run cancelled", {"error": "cancelled"})
+        if run is None or run.status in TERMINAL:
+            return run
+        task = self._tasks.get(run_id)
+        if task is not None and not task.done() and run_id not in self._stop_flags:
+            self._stop_flags.add(run_id)
+            await self.bus.publish(
+                run_id, "log", "Stop requested — finishing with the results collected so far"
+            )
         return run
 
     def subscribe(self, run_id: str) -> EventSubscription:

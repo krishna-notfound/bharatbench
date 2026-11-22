@@ -43,8 +43,8 @@ export const STATUS_LABEL: Record<RunStatus, string> = {
   running: "Running",
   scoring: "Scoring",
   done: "Done",
-  failed: "Failed",
-  cancelled: "Cancelled",
+  failed: "Didn't finish",
+  cancelled: "Didn't finish",
 };
 
 export const SEVERITY_LABEL: Record<Severity, string> = {
