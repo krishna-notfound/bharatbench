@@ -1,6 +1,7 @@
 """Form-field inference for the crawler: which editable field is it, what to type, which button submits. No I/O."""
 
 import re
+import shlex
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -142,8 +143,10 @@ def fillable_fields(nodes: list[UiNode], done: set[str]) -> list[FormField]:
 
 
 def adb_text(value: str) -> str:
-    """`input text` needs spaces as %s."""
-    return value.replace("%", "%25").replace(" ", "%s")
+    """Argument for `adb shell input text`. adb joins its arguments into ONE device shell command line, so
+    every shell metacharacter (; | & $ ` ( ) < > * ? # quotes, backslash, newline) must be neutralised:
+    single-quote the whole value. `input text` itself needs spaces as %s."""
+    return shlex.quote(value.replace("%", "%25").replace(" ", "%s"))
 
 
 def is_submit(node: UiNode) -> bool:

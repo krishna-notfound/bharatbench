@@ -10,6 +10,7 @@ Invariants (tests: harness/tests/test_crawler.py, test_forms.py, test_live.py):
 """
 
 import asyncio
+import shlex
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -202,13 +203,13 @@ class Crawler:
         t0 = self._clock()
         activity = self.activity
         if not activity:
-            _, out, _ = await self.adb.shell("cmd", "package", "resolve-activity", "--brief", self.package, timeout=20)
+            _, out, _ = await self.adb.shell("cmd", "package", "resolve-activity", "--brief", shlex.quote(self.package), timeout=20)
             resolved = parse_resolve_activity(out)
             activity = resolved.split("/", 1)[1] if resolved else None
         launch_ms = None
         if activity:
             self._launcher = normalize_activity(f"{self.package}/{activity}", self.package)
-            rc, out, _ = await self.adb.shell("am", "start", "-W", "-n", f"{self.package}/{activity}", timeout=60)
+            rc, out, _ = await self.adb.shell("am", "start", "-W", "-n", shlex.quote(f"{self.package}/{activity}"), timeout=60)
             launch_ms = parse_launch_time(out) if rc == 0 else None
         else:
             await self._monkey_launch()
@@ -220,7 +221,7 @@ class Crawler:
         return launched
 
     async def _monkey_launch(self) -> None:
-        await self.adb.shell("monkey", "-p", self.package, "-c", "android.intent.category.LAUNCHER", "1", timeout=30)
+        await self.adb.shell("monkey", "-p", shlex.quote(self.package), "-c", "android.intent.category.LAUNCHER", "1", timeout=30)
 
     # ---- forms ----
     async def _keyboard_shown(self) -> bool:
@@ -387,7 +388,7 @@ class Crawler:
         await self.adb.shell("input", "keyevent", "KEYCODE_HOME", timeout=15)
         self._step("background", True, "KEYCODE_HOME", t0)
         t0 = self._clock()
-        rc, _, _ = await self.adb.shell("am", "kill", self.package, timeout=15)
+        rc, _, _ = await self.adb.shell("am", "kill", shlex.quote(self.package), timeout=15)
         self._step("kill", rc == 0, self.package, t0)
         t0 = self._clock()
         await self._monkey_launch()

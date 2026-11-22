@@ -8,6 +8,7 @@ import anyio
 from fastapi import APIRouter, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 
+from app.access import rate_limit, request_user_id, require_run_owner, visible_run_ids
 from app.auth.supabase import bearer_token, verify_token
 from app.conversations.store import get_conversation_store
 from app.models import Finding, ProfileId, Run, RunEvent, TestCredentials
@@ -21,6 +22,16 @@ router = APIRouter(prefix="/api/runs")
 MAX_APK_BYTES = 200 * 1024 * 1024
 DEFAULT_PROFILES = "baseline,budget_2gb,flaky_network"
 CHUNK = 1024 * 1024
+ARTIFACT_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".txt": "text/plain; charset=utf-8",
+    ".log": "text/plain; charset=utf-8",
+    ".xml": "text/plain; charset=utf-8",
+    ".json": "application/json",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+}
 
 
 def parse_profiles(raw: str) -> list[ProfileId]:
@@ -58,6 +69,7 @@ async def create_run(
     authorization: str | None = Header(default=None),
 ) -> Run:
     settings: Settings = request.app.state.settings
+    rate_limit(request, "create_run", 10)
     user = await verify_token(bearer_token(authorization), settings)
     if user is None and settings.auth_required:
         raise HTTPException(401, "Sign in required", headers={"WWW-Authenticate": "Bearer"})
@@ -91,13 +103,11 @@ async def create_run(
 
 
 @router.get("")
-async def list_runs(authorization: str | None = Header(default=None)) -> list[Run]:
+async def list_runs(request: Request, authorization: str | None = Header(default=None)) -> list[Run]:
+    settings: Settings = request.app.state.settings
     runs = await get_run_service().list_runs()
-    user = await verify_token(bearer_token(authorization))
-    if user is None:
-        return runs
-    owned = await get_conversation_store().run_ids_for_user(user.id)
-    return [r for r in runs if r.id in owned]
+    allowed = await visible_run_ids(await request_user_id(authorization, settings), settings)
+    return runs if allowed is None else [r for r in runs if r.id in allowed]
 
 
 @router.get("/{run_id}")
@@ -134,11 +144,13 @@ _retry_lock = asyncio.Lock()
 
 
 @router.post("/{run_id}/retry")
-async def retry_run(run_id: str) -> Run:
+async def retry_run(request: Request, run_id: str, authorization: str | None = Header(default=None)) -> Run:
     """Idempotent: re-run a run that ended cancelled/failed; repeated calls return the same new run."""
     service = get_run_service()
     async with _retry_lock:
         source = await _require_run(run_id)
+        await require_run_owner(source, authorization, request.app.state.settings)
+        rate_limit(request, "retry", 10)
         for ev in reversed(await service.list_events(run_id)):
             existing = (ev.data or {}).get("retry_run_id")
             if existing:
@@ -158,8 +170,8 @@ async def retry_run(run_id: str) -> Run:
 
 
 @router.post("/{run_id}/cancel")
-async def cancel_run(run_id: str) -> Run:
-    await _require_run(run_id)
+async def cancel_run(request: Request, run_id: str, authorization: str | None = Header(default=None)) -> Run:
+    await require_run_owner(await _require_run(run_id), authorization, request.app.state.settings)
     run = await get_run_service().cancel_run(run_id)
     if run is None:
         raise HTTPException(404, f"Run {run_id} not found")
@@ -184,4 +196,16 @@ async def artifact(request: Request, run_id: str, path: str) -> FileResponse:
         raise HTTPException(400, "Invalid artifact path")
     if not target.is_file():
         raise HTTPException(404, "Artifact not found")
-    return FileResponse(target)
+    kind = ARTIFACT_TYPES.get(target.suffix.lower())
+    if kind is None:
+        raise HTTPException(404, "Artifact not found")
+    # Files come from the device under test: never let a browser treat them as HTML or script.
+    return FileResponse(
+        target,
+        media_type=kind,
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Content-Disposition": "inline" if kind.startswith(("image/", "video/")) else "attachment",
+        },
+    )

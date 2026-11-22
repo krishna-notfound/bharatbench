@@ -23,6 +23,7 @@ class ConversationStore(Protocol):
     async def list_for_user(self, user_id: str, limit: int = 50) -> list[dict]: ...
     async def set_run_owner(self, run_id: str, user_id: str | None) -> None: ...
     async def run_ids_for_user(self, user_id: str) -> set[str]: ...
+    async def run_owner(self, run_id: str) -> str | None: ...
 
 
 def _title(content: str) -> str:
@@ -75,6 +76,9 @@ class MemoryConversationStore:
 
     async def run_ids_for_user(self, user_id: str) -> set[str]:
         return {r for r, u in self._run_owner.items() if u == user_id}
+
+    async def run_owner(self, run_id: str) -> str | None:
+        return self._run_owner.get(run_id)
 
 
 class SupabaseConversationStore:
@@ -149,6 +153,10 @@ class SupabaseConversationStore:
     async def run_ids_for_user(self, user_id: str) -> set[str]:
         rows = await self._req("GET", "runs", params={"select": "id", "user_id": f"eq.{user_id}"})
         return {r["id"] for r in rows or []}
+
+    async def run_owner(self, run_id: str) -> str | None:
+        rows = await self._req("GET", "runs", params={"select": "user_id", "id": f"eq.{run_id}"})
+        return (rows[0].get("user_id") if rows else None) or None
 
 
 _store: ConversationStore | None = None

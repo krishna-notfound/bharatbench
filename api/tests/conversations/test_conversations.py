@@ -59,6 +59,9 @@ def users(monkeypatch):
 
     monkeypatch.setattr(conv_routes, "verify_token", fake_verify)
     monkeypatch.setattr(runs_routes, "verify_token", fake_verify)
+    from app import access
+
+    monkeypatch.setattr(access, "verify_token", fake_verify)
 
 
 @pytest.fixture
