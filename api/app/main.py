@@ -40,6 +40,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await storage.init()
         service = RunServiceImpl(storage, EventBus(storage), settings.data_dir, harness_factory)
         await service.recover_orphans()
+        service.start_watchdog()
         set_run_service(service)
         app.state.service = service
         try:

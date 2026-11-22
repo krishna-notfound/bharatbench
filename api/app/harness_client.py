@@ -52,6 +52,12 @@ class HarnessClient:
                 async for chunk in resp.aiter_bytes():
                     await out.write(chunk)
 
+    async def delete(self, job_id: str) -> None:
+        """Remove a finished job's artifacts from the harness disk (404 = already gone)."""
+        resp = await self._client.delete(f"/jobs/{job_id}")
+        if resp.status_code != 404:
+            resp.raise_for_status()
+
     async def cancel(self, job_id: str) -> HarnessJob:
         resp = await self._client.post(f"/jobs/{job_id}/cancel")
         resp.raise_for_status()

@@ -21,6 +21,14 @@ class Settings(BaseSettings):
     adb_path: str = "adb"
     maestro_path: str = "maestro"
     job_timeout_s: int = 720
+    profile_timeout_s: int = 300  # one profile hanging longer than this is treated as a device problem
+    docker_path: str = "docker"
+    container_name: str = "redroid"
+    min_free_mb: int = 600  # health gate: below this the lab frees space before running
+    hard_min_free_mb: int = 300  # below this even after cleanup, the job is refused
+    boot_timeout_s: int = 120
+    reconnect_wait_s: int = 20
+    keep_jobs: int = 5
     max_apk_mb: int = 300
 
 

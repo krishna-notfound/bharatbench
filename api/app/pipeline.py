@@ -4,6 +4,7 @@ Runtime testing is skipped (with a recorded reason), never faked, when the harne
 """
 
 import asyncio
+import contextlib
 import logging
 import time
 import zipfile
@@ -32,7 +33,11 @@ from app.storage.base import Storage
 log = logging.getLogger(__name__)
 
 POLL_INTERVAL_S = 2.0
-HARNESS_TIMEOUT_S = 15 * 60
+HARNESS_TIMEOUT_S = 15 * 60  # total runtime phase budget
+STALL_TIMEOUT_S = 4 * 60  # no change in harness progress/events for this long = the test phone is stuck
+UNREACHABLE_GRACE_S = 60.0  # consecutive failed polls tolerated before the harness counts as unreachable
+SALVAGE_WAIT_S = 30.0  # after cancelling, how long to wait for the harness to settle before reading partial results
+MIN_DISK_MB = 400  # harness reports less free disk than this: skip runtime, keep static
 STATIC_TIMEOUT_S = 180.0
 
 
@@ -43,6 +48,7 @@ class HarnessLike(Protocol):
     async def result(self, job_id: str) -> HarnessResult: ...
     async def download_artifact(self, job_id: str, path: str, dest: Path) -> None: ...
     async def cancel(self, job_id: str) -> HarnessJob: ...
+    async def delete(self, job_id: str) -> None: ...
     async def aclose(self) -> None: ...
 
 
@@ -57,7 +63,29 @@ def load_analyzer() -> tuple[Callable[..., Any], Callable[..., Any]]:
 
 
 class _Skip(Exception):
-    """Runtime testing cannot proceed; carries the user-facing reason."""
+    """Runtime testing cannot proceed; carries the user-facing reason and any partial harness result."""
+
+    def __init__(self, reason: str, partial: HarnessResult | None = None) -> None:
+        super().__init__(reason)
+        self.partial = partial
+
+
+def _profile_label(profile_id: str | None) -> str:
+    if not profile_id:
+        return "the test"
+    try:
+        from app.profiles import PROFILE_BY_ID
+
+        return f"'{PROFILE_BY_ID[profile_id].name}'"
+    except Exception:  # noqa: BLE001 - label lookup must never break recovery
+        return f"'{profile_id}'"
+
+
+def _stall_reason(profile_id: str | None) -> str:
+    return (
+        f"The test phone stopped responding during {_profile_label(profile_id)} and we stopped that test. "
+        "It resets itself before the next run; static results are below. Try again in a minute."
+    )
 
 
 async def _set_status(storage: Storage, bus: EventBus, run: Run, status: RunStatus, **changes: Any) -> Run:
@@ -131,6 +159,41 @@ def _kind(rel: str) -> str:
     )
 
 
+async def _salvage(
+    client: HarnessLike, bus: EventBus, run_id: str, job_id: str, art_dir: Path
+) -> HarnessResult | None:
+    """Cancel a stuck/failed harness job and recover whatever profiles completed. Never raises."""
+    try:
+        await bus.publish(run_id, "log", "Recovery: stopping the test phone job")
+        with contextlib.suppress(Exception):
+            await client.cancel(job_id)
+        deadline = time.monotonic() + SALVAGE_WAIT_S
+        while time.monotonic() < deadline:
+            job = await client.poll(job_id)
+            if job.status not in ("queued", "running"):
+                break
+            await asyncio.sleep(POLL_INTERVAL_S)
+        result = await client.result(job_id)
+        done = [p for p in result.profiles if p.applied]
+        if not done:
+            return None
+        result = result.model_copy(update={"profiles": done, "security": []})
+        await bus.publish(run_id, "log", f"Recovery: kept partial results for {len(done)} completed condition(s)")
+        return await _download_artifacts(client, bus, run_id, job_id, result, art_dir)
+    except Exception as exc:  # noqa: BLE001 - salvage is best effort
+        await bus.publish(run_id, "log", f"Recovery: no partial results ({type(exc).__name__})")
+        return None
+
+
+async def _cleanup_job(client: HarnessLike, bus: EventBus, run_id: str, job_id: str) -> None:
+    """Free the harness disk once artifacts are downloaded (or abandoned). Never raises."""
+    try:
+        await client.delete(job_id)
+        await bus.publish(run_id, "log", "Test lab cleaned up")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Harness cleanup of job %s failed: %s", job_id, exc)
+
+
 async def _run_harness(
     client: HarnessLike | None,
     storage: Storage,
@@ -143,27 +206,50 @@ async def _run_harness(
 ) -> tuple[Run, HarnessResult]:
     if client is None:
         raise _Skip("Harness not configured (HARNESS_URL unset); runtime testing skipped.")
+    job_id: str | None = None
     try:
-        await client.health()
+        info = await client.health()
+        free = info.get("disk_free_mb") if isinstance(info, dict) else None
+        if isinstance(free, int | float) and free < MIN_DISK_MB:
+            await bus.publish(run.id, "log", f"Test lab disk is low ({free:.0f} MB free)")
+            raise _Skip("The test lab is cleaning up, try again shortly. Static results are below.")
         run = await _set_status(storage, bus, run, "provisioning")
         assert run.app is not None
-        job = await client.submit(
-            apk_path,
-            HarnessJobRequest(
-                run_id=run.id,
-                package_name=run.app.package_name,
-                main_activity=run.app.main_activity,
-                profiles=run.profile_ids,
-                **({"journey_steps": min(journey_steps, 20)} if journey_steps else {}),
-            ),
-        )
-        job_ids[run.id] = job.job_id
+        try:
+            job = await client.submit(
+                apk_path,
+                HarnessJobRequest(
+                    run_id=run.id,
+                    package_name=run.app.package_name,
+                    main_activity=run.app.main_activity,
+                    profiles=run.profile_ids,
+                    **({"journey_steps": min(journey_steps, 20)} if journey_steps else {}),
+                ),
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 409:
+                raise _Skip("The test phone is busy with another run. Try again in a few minutes.") from exc
+            raise
+        job_id = job.job_id
+        job_ids[run.id] = job_id
+        await bus.publish(run.id, "log", "Test phone job started", {"job_id": job_id})
         run = await _set_status(storage, bus, run, "running")
         seen_events = 0
         last_profile = None
-        deadline = time.monotonic() + HARNESS_TIMEOUT_S
+        started = last_change = last_ok = time.monotonic()
+        signature: tuple[Any, ...] = ()
         while True:
-            job = await client.poll(job.job_id)
+            try:
+                job = await client.poll(job_id)
+            except (httpx.HTTPError, OSError) as exc:
+                if time.monotonic() - last_ok > UNREACHABLE_GRACE_S:
+                    raise _Skip(
+                        "The test lab stopped answering mid-run (harness unreachable). "
+                        f"Static results are below. Try again in a minute. ({type(exc).__name__})"
+                    ) from exc
+                await asyncio.sleep(POLL_INTERVAL_S)
+                continue
+            last_ok = time.monotonic()
             for line in job.events[seen_events:]:
                 await bus.publish(run.id, "log", line)
             seen_events = len(job.events)
@@ -179,15 +265,45 @@ async def _run_harness(
             if job.status == "done":
                 break
             if job.status in ("failed", "cancelled"):
-                raise _Skip(f"Harness job {job.status}: {job.error or 'no detail'}")
-            if time.monotonic() > deadline:
-                await client.cancel(job.job_id)
-                raise _Skip(f"Harness timed out after {HARNESS_TIMEOUT_S // 60} minutes.")
+                detail = job.error or "no detail"
+                raise _Skip(
+                    f"The test lab could not finish this run ({detail}). Static results are below.",
+                    await _salvage(client, bus, run.id, job_id, art_dir),
+                )
+            now = time.monotonic()
+            sig = (job.progress, len(job.events), job.current_profile, job.status)
+            if sig != signature:
+                signature, last_change = sig, now
+            if now - last_change > STALL_TIMEOUT_S:
+                where = _profile_label(job.current_profile)
+                await bus.publish(
+                    run.id, "log", f"Watchdog: no progress for {STALL_TIMEOUT_S / 60:g} minutes during {where}"
+                )
+                raise _Skip(
+                    _stall_reason(job.current_profile), await _salvage(client, bus, run.id, job_id, art_dir)
+                )
+            if now - started > HARNESS_TIMEOUT_S:
+                await bus.publish(
+                    run.id, "log", f"Watchdog: runtime testing exceeded {HARNESS_TIMEOUT_S / 60:g} minutes"
+                )
+                raise _Skip(
+                    f"Runtime testing took longer than {HARNESS_TIMEOUT_S / 60:g} minutes and was stopped. "
+                    "Static results are below; try again in a minute.",
+                    await _salvage(client, bus, run.id, job_id, art_dir),
+                )
             await asyncio.sleep(POLL_INTERVAL_S)
-        result = await client.result(job.job_id)
-        result = await _download_artifacts(client, bus, run.id, job.job_id, result, art_dir)
+        result = await client.result(job_id)
+        result = await _download_artifacts(client, bus, run.id, job_id, result, art_dir)
     except (httpx.HTTPError, OSError) as exc:
-        raise _Skip(f"Harness unreachable or errored: {exc}") from exc
+        if job_id is not None:
+            await bus.publish(run.id, "log", f"Recovery: test lab error ({type(exc).__name__}: {exc})")
+        raise _Skip(
+            f"The test lab is unreachable or errored ({type(exc).__name__}). "
+            "Static results are below. Try again in a minute."
+        ) from exc
+    finally:
+        if job_id is not None:
+            await asyncio.shield(_cleanup_job(client, bus, run.id, job_id))
     return run, result
 
 
@@ -235,6 +351,9 @@ async def run_pipeline(
         except _Skip as skip:
             skipped_reason = str(skip)
             await bus.publish(run_id, "log", f"Runtime testing skipped: {skipped_reason}")
+            if skip.partial is not None and skip.partial.profiles:
+                with contextlib.suppress(Exception):
+                    collected.extend(runtime_findings(run_id, skip.partial, package=app_info.package_name))
 
         run = await _set_status(storage, bus, run, "scoring")
         baseline_ran = runtime_executed and "baseline" in run.profile_ids

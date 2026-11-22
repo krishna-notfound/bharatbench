@@ -43,12 +43,13 @@ Every request needs header `X-Harness-Token: <HARNESS_TOKEN>`; missing/wrong →
 
 | Method | Path | Body | Returns |
 | ------ | ---- | ---- | ------- |
-| GET | `/health` | — | `{adb: bool, devices: str[], emulator_booted: bool, maestro: bool, android_version: str\|null}` |
+| GET | `/health` | — | `{adb: bool, devices: str[], emulator_booted: bool, maestro: bool, android_version: str\|null, device_status: ok\|degraded\|repairing\|down, last_repair, disk_free_mb}` (last three added in f18; job `events` may carry `DEVICE:` lines) |
 | POST | `/jobs` | multipart: `apk` file + `request` (JSON `HarnessJobRequest`) | `HarnessJob`, 202. 409 if a job is running (one at a time). |
 | GET | `/jobs/{job_id}` | — | `HarnessJob` |
-| GET | `/jobs/{job_id}/result` | — | `HarnessResult` (409 until status `done`) |
+| GET | `/jobs/{job_id}/result` | — | `HarnessResult` (409 while queued/running; also served for failed/cancelled jobs so partial results survive) |
 | GET | `/jobs/{job_id}/artifacts/{path}` | — | file |
 | POST | `/jobs/{job_id}/cancel` | — | `HarnessJob` |
+| DELETE | `/jobs/{job_id}` | — | `{deleted, job_id}`; removes artifacts after the API downloaded them (409 while running, idempotent). Added in f18 |
 
 Artifact paths in `HarnessResult` are relative to the job dir; the API downloads each into
 `data/runs/{run_id}/artifacts/{profile_id}/...` and rewrites refs to that relative path.

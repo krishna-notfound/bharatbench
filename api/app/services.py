@@ -13,6 +13,10 @@ from app.pipeline import HarnessFactory, run_pipeline
 from app.storage.base import Storage
 
 TERMINAL = ("done", "failed", "cancelled")
+STUCK_AFTER_S = 25 * 60  # no status change for this long: the pipeline is wedged
+WATCHDOG_INTERVAL_S = 60.0
+RESTART_REASON = "The server restarted while this run was in progress, so it was stopped. Please start it again."
+STUCK_REASON = "This run stopped making progress and was ended automatically. Please start it again."
 
 
 class RunServiceImpl:
@@ -25,16 +29,82 @@ class RunServiceImpl:
         self._harness_factory = harness_factory
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._job_ids: dict[str, str] = {}
+        self._watchdog: asyncio.Task[None] | None = None
 
-    async def recover_orphans(self) -> None:
-        """Mark runs left non-terminal by a previous process as failed."""
+    async def recover_orphans(self) -> int:
+        """Finish every run a previous process left non-terminal, with a clear reason and log events."""
+        count = 0
         for run in await self.storage.list_runs():
             if run.status not in TERMINAL:
-                failed = run.model_copy(
-                    update={"status": "failed", "error": "API restarted", "updated_at": datetime.now(UTC)}
+                await self._force_finish(
+                    run, RESTART_REASON, "Recovery: the server restarted while this run was in progress"
                 )
-                await self.storage.update_run(failed)
-                await self.bus.publish(run.id, "error", "API restarted", {"error": "API restarted"})
+                count += 1
+        return count
+
+    async def _force_finish(self, run: Run, reason: str, log_line: str) -> None:
+        """Move a stuck run to `failed` with `reason`; also stops its harness job if we can find it."""
+        await self.bus.publish(run.id, "log", log_line)
+        await self._stop_harness_job(run.id)
+        failed = run.model_copy(update={"status": "failed", "error": reason, "updated_at": datetime.now(UTC)})
+        await self.storage.update_run(failed)
+        await self.bus.publish(run.id, "status", "Status: failed", {"status": "failed"})
+        await self.bus.publish(run.id, "error", reason, {"error": reason})
+
+    async def _stop_harness_job(self, run_id: str) -> None:
+        """Best effort: cancel + delete the harness job a dead pipeline left behind."""
+        job_id = self._job_ids.get(run_id)
+        if job_id is None:
+            for ev in reversed(await self.storage.list_events(run_id)):
+                if ev.data and ev.data.get("job_id"):
+                    job_id = str(ev.data["job_id"])
+                    break
+        if job_id is None:
+            return
+        try:
+            client = self._harness_factory()
+        except Exception:  # noqa: BLE001
+            return
+        if client is None:
+            return
+        try:
+            await self.bus.publish(run_id, "log", "Recovery: stopping the leftover test phone job")
+            with contextlib.suppress(Exception):
+                await client.cancel(job_id)
+            with contextlib.suppress(Exception):
+                await client.delete(job_id)
+        finally:
+            with contextlib.suppress(Exception):
+                await client.aclose()
+
+    async def sweep_stuck(self) -> int:
+        """Watchdog: finish non-terminal runs unchanged for STUCK_AFTER_S (their task is stopped first)."""
+        now = datetime.now(UTC)
+        swept = 0
+        for run in await self.storage.list_runs():
+            if run.status in TERMINAL or (now - run.updated_at).total_seconds() < STUCK_AFTER_S:
+                continue
+            task = self._tasks.get(run.id)
+            killed = task is not None and not task.done()
+            if task is not None and killed:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+            fresh = await self.storage.get_run(run.id)
+            # a task we just killed leaves "cancelled"; replace that with the real reason
+            if fresh is not None and (fresh.status not in TERMINAL or (killed and fresh.status == "cancelled")):
+                await self._force_finish(fresh, STUCK_REASON, "Watchdog: this run stopped making progress")
+                swept += 1
+        return swept
+
+    def start_watchdog(self, interval_s: float = WATCHDOG_INTERVAL_S) -> None:
+        async def loop() -> None:
+            while True:
+                await asyncio.sleep(interval_s)
+                with contextlib.suppress(Exception):
+                    await self.sweep_stuck()
+
+        self._watchdog = asyncio.create_task(loop())
 
     async def create_run(
         self, apk_path: str, apk_name: str, profile_ids: list[ProfileId], journey_steps: int | None = None
@@ -110,6 +180,8 @@ class RunServiceImpl:
         return self.bus.subscribe(run_id)
 
     async def shutdown(self) -> None:
+        if self._watchdog is not None:
+            self._watchdog.cancel()
         for task in list(self._tasks.values()):
             task.cancel()
         await asyncio.gather(*self._tasks.values(), return_exceptions=True)

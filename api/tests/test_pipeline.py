@@ -23,6 +23,7 @@ class FakeHarness:
         self.poll_error = poll_error
         self.polls = 0
         self.cancelled = False
+        self.deleted = None
         self.closed = False
 
     async def health(self):
@@ -64,6 +65,9 @@ class FakeHarness:
         self.cancelled = True
         return HarnessJob(job_id=job_id, run_id="x", status="cancelled")
 
+    async def delete(self, job_id):
+        self.deleted = job_id
+
     async def aclose(self):
         self.closed = True
 
@@ -71,6 +75,7 @@ class FakeHarness:
 @pytest.fixture(autouse=True)
 def fast_poll(monkeypatch):
     monkeypatch.setattr(pipeline, "POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(pipeline, "UNREACHABLE_GRACE_S", 0.05)
 
 
 @pytest.fixture
@@ -215,4 +220,4 @@ async def test_recover_orphans_marks_failed(make_service, tmp_path):
     await service.storage.create_run(make_run("old", "running"), "x")
     await service.recover_orphans()
     run = await service.get_run("old")
-    assert run.status == "failed" and run.error == "API restarted"
+    assert run.status == "failed" and "server restarted" in run.error
