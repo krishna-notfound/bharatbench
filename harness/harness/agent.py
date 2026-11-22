@@ -31,8 +31,10 @@ SYSTEM_PROMPT = (
     "You drive an Android app on a phone to check one test. You see the visible UI nodes as lines "
     "'index|class|text|hint|resource-id|flags'. Reply with strict JSON only, one action per reply: "
     '{"action":"tap"|"fill"|"back"|"done"|"fail","node":<index, for tap/fill>,"text":"<text to type, for fill>",'
-    '"reason":"short plain sentence"}. Use "done" when the success check is visibly met (reason says what you saw), '
-    '"fail" when the app clearly does not behave as the success check requires or is stuck/broken. '
+    '"met":true|false (required with done),"reason":"short plain sentence"}. Use "done" with "met":true only when '
+    'the success check is visibly met (reason says what you saw); if the check is NOT met use "fail" '
+    '(or "done" with "met":false). Use "fail" when the app clearly does not behave as the success check requires '
+    'or is stuck/broken. '
     "Never use real personal data; never pay, buy, delete or log out."
 )
 
@@ -75,8 +77,25 @@ def parse_action(text: str, n_nodes: int) -> dict[str, Any] | None:
         "action": act,
         "node": node,
         "text": obj.get("text"),
+        "met": obj.get("met") if isinstance(obj.get("met"), bool) else None,
         "reason": str(obj.get("reason") or "")[:200],
     }
+
+
+# A "done" whose own reason says the check failed must not count as a pass.
+_NOT_MET = re.compile(
+    r"(?:not (?:been )?met|isn'?t met|wasn'?t met|not (?:been )?satisfied|check (?:fails|failed|is not met))",
+    re.IGNORECASE,
+)
+
+
+def verdict(act: dict[str, Any]) -> bool:
+    """True only for an explicit, consistent pass."""
+    if act["action"] != "done":
+        return False
+    if act.get("met") is False:
+        return False
+    return not _NOT_MET.search(act.get("reason") or "")
 
 
 async def ask_llm(client: httpx.AsyncClient, s: Settings, messages: list[dict[str, str]]) -> str | None:
@@ -144,7 +163,8 @@ async def drive(
                 return finish(None, "The agent could not decide the next action (no usable answer from the model).")
             kind, reason = act["action"], sec.mask(act["reason"])
             if kind == "done":
-                return finish(True, reason or "Success check met.")
+                passed = verdict(act)
+                return finish(passed, reason or ("Success check met." if passed else "Success check not met."))
             if kind == "fail":
                 return finish(False, reason or "Success check not met.")
             t0 = crawler._clock()
