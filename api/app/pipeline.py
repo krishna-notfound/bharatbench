@@ -16,7 +16,6 @@ from typing import Any, Protocol
 
 import httpx
 
-from app.agent_tests import generate_agent_tests
 from app.analyzer.dedupe import dedupe_findings
 from app.analyzer.explain import explain_findings
 from app.analyzer.rules_agent import agent_test_findings
@@ -196,6 +195,15 @@ async def _download_artifacts(
     except (OSError, ValueError) as exc:
         log.warning("Could not write step replay for run %s: %s", run_id, exc)
     return out
+
+
+def load_agent_tests(run_dir: Path) -> list[AgentTest]:
+    """Tests handed in by RunService.rerun(agent_tests=...); default runs have none."""
+    try:
+        raw = json.loads((run_dir / "agent_tests_in.json").read_text(encoding="utf-8"))
+        return [AgentTest.model_validate(t) for t in raw]
+    except (OSError, ValueError):
+        return []
 
 
 def _save_agent_tests(art_dir: Path, tests: list[AgentTest], result: HarnessResult) -> None:
@@ -418,8 +426,9 @@ async def run_pipeline(
         await bus.publish(run_id, "log", f"Static analysis found {len(static)} findings.")
         collected: list[Finding] = list(static)
 
-        agent_list, agent_src = await generate_agent_tests(app_info, static)
-        await bus.publish(run_id, "log", f"Agent wrote {len(agent_list)} custom test(s) ({agent_src}).")
+        agent_list = load_agent_tests(data_dir / "runs" / run_id)  # only runs started by the agent's write_custom_tests
+        if agent_list:
+            await bus.publish(run_id, "log", f"Running {len(agent_list)} test(s) the agent wrote.")
         runtime_executed = False
         skipped_reason: str | None = None
         try:
@@ -432,7 +441,8 @@ async def run_pipeline(
             )
             collected.extend(runtime_findings(run_id, result, package=app_info.package_name))
             collected.extend(agent_test_findings(run_id, result))
-            _save_agent_tests(data_dir / "runs" / run_id / "artifacts", agent_list, result)
+            if agent_list:
+                _save_agent_tests(data_dir / "runs" / run_id / "artifacts", agent_list, result)
             runtime_executed = True
         except _Skip as skip:
             skipped_reason = str(skip)

@@ -2,13 +2,14 @@
 
 import asyncio
 import contextlib
+import json
 import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 from app.events import EventBus, EventSubscription
-from app.models import Finding, ProfileId, Run, RunEvent
+from app.models import AgentTest, Finding, ProfileId, Run, RunEvent
 from app.pipeline import HarnessFactory, run_pipeline
 from app.storage.base import Storage
 
@@ -123,22 +124,35 @@ class RunServiceImpl:
         self._watchdog = asyncio.create_task(loop())
 
     async def create_run(
-        self, apk_path: str, apk_name: str, profile_ids: list[ProfileId], journey_steps: int | None = None
+        self,
+        apk_path: str,
+        apk_name: str,
+        profile_ids: list[ProfileId],
+        journey_steps: int | None = None,
+        agent_tests: list[AgentTest] | None = None,
     ) -> Run:
         run_id = uuid.uuid4().hex[:12]
         dest = self.data_dir / "runs" / run_id / "app.apk"
         dest.parent.mkdir(parents=True, exist_ok=True)
         await asyncio.to_thread(shutil.copyfile, apk_path, dest)
+        if agent_tests:  # read back by the pipeline (also after a restart-resume)
+            (dest.parent / "agent_tests_in.json").write_text(
+                json.dumps([t.model_dump() for t in agent_tests]), encoding="utf-8"
+            )
         return await self._start(run_id, apk_name, profile_ids, dest, journey_steps)
 
     async def rerun(
-        self, source_run_id: str, profile_ids: list[ProfileId], journey_steps: int | None = None
+        self,
+        source_run_id: str,
+        profile_ids: list[ProfileId],
+        journey_steps: int | None = None,
+        agent_tests: list[AgentTest] | None = None,
     ) -> Run:
         source = await self.storage.get_run(source_run_id)
         source_apk = await self.storage.get_apk_path(source_run_id)
         if source is None or source_apk is None:
             raise LookupError(f"Run {source_run_id} not found")
-        return await self.create_run(source_apk, source.apk_name, profile_ids, journey_steps)
+        return await self.create_run(source_apk, source.apk_name, profile_ids, journey_steps, agent_tests)
 
     async def _start(
         self, run_id: str, apk_name: str, profile_ids: list[ProfileId], apk: Path, journey_steps: int | None = None

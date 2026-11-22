@@ -153,3 +153,54 @@ async def generate_agent_tests(
     except Exception as exc:  # noqa: BLE001 - best effort
         log.warning("Agent test generation failed: %s", type(exc).__name__)
     return fallback_tests(app, findings), "fallback"
+
+
+CUSTOM_SYSTEM_PROMPT = (
+    "You write 1 to 5 short, concrete UI tests for an Android app, exactly as the user describes below. "
+    "A robot will run them on a phone. Use ONLY the app facts and the user's request; do not add unrelated tests. "
+    "Each test is a goal doable in the UI. Pick the condition that matches the request (use baseline unless the "
+    "user names a network, memory or restart situation). "
+    'Reply with strict JSON only: {"tests":[{"id":"snake_case","title":"short title","goal":"what to do",'
+    f'"condition":"one of {sorted(SUPPORTED)}","success_check":"what must be visible for pass"}}]}}'
+)
+
+
+async def write_custom_tests(
+    app: AppInfo, findings: list[Finding], request: str, *, client: httpx.AsyncClient | None = None
+) -> tuple[list[AgentTest], str | None]:
+    """Tests for the user's own plain-words request. Returns (tests, error); never raises, never falls back
+    to invented tests (the user asked for something specific)."""
+    request = " ".join(request.split())[:600]
+    if not request:
+        return [], "no request was given; ask the user what they want tested"
+    cfg = _llm_config()
+    if cfg is None:
+        return [], "the test writer is not configured (no LLM key)"
+    base, model, key, style = cfg
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": CUSTOM_SYSTEM_PROMPT},
+            {"role": "user", "content": f"App facts: {_facts(app, findings)}\nUser request: {request}"},
+        ],
+        "max_tokens": 900,
+        "temperature": 0.3,
+    }
+    if model == "sarvam-105b":
+        body["reasoning_effort"] = None
+    headers = {"api-subscription-key": key} if style == "sarvam" else {"Authorization": f"Bearer {key}"}
+    http = client or httpx.AsyncClient()
+    try:
+        resp = await http.post(f"{base}/chat/completions", headers=headers, json=body, timeout=CALL_TIMEOUT_S)
+        if resp.status_code != 200:
+            return [], f"the test writer returned HTTP {resp.status_code}"
+        content = resp.json()["choices"][0]["message"].get("content") or ""
+    except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
+        return [], f"the test writer could not be reached ({type(exc).__name__})"
+    finally:
+        if client is None:
+            await http.aclose()
+    tests = validate(parse_llm_json(content))
+    if not tests:
+        return [], "the test writer did not return usable tests; try describing the test differently"
+    return tests, None

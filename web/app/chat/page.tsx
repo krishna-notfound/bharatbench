@@ -48,7 +48,9 @@ async function loadHistory(): Promise<Message[]> {
 
 function ChatView() {
   const rt = useAgent();
-  const runParam = useSearchParams().get("run");
+  const params = useSearchParams();
+  const runParam = params.get("run");
+  const customTests = params.get("intent") === "custom-tests";
   const askedRun = useRef<string | null>(null);
   const { connect, connected } = rt;
   const [draft, setDraft] = useState("");
@@ -71,9 +73,13 @@ function ChatView() {
   useEffect(() => {
     if (runParam && connected && askedRun.current !== runParam) {
       askedRun.current = runParam;
-      rt.sendText(`Tell me about run ${runParam}`);
+      rt.sendText(
+        customTests
+          ? `I want new tests for run ${runParam}. Ask me: "What should I test in <the app's name>? Describe it and I'll write the tests." Then use write_custom_tests with my answer.`
+          : `Tell me about run ${runParam}`,
+      );
     }
-  }, [runParam, connected, rt]);
+  }, [runParam, customTests, connected, rt]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });

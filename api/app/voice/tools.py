@@ -134,6 +134,17 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         [],
     ),
     _fn(
+        "write_custom_tests",
+        "Write 1-5 new UI tests for the user's app from what the user describes in plain words (for example "
+        "'signup with a wrong email' or 'search in Hindi'), then START a run with them. Returns the new run id "
+        "and the test titles; read the titles back to the user.",
+        {
+            "apk_or_run": {"type": "string", "description": "Run id or apk name; default the active run"},
+            "request": {"type": "string", "description": "What the user wants tested, in their own words"},
+        },
+        ["request"],
+    ),
+    _fn(
         "compare_runs",
         "Compare two runs: score delta and fixed / new / persisting findings.",
         {"run_a": {"type": "string", "description": "Older / baseline run"}, "run_b": {"type": "string"}},
@@ -572,7 +583,37 @@ async def _start_planned_test(service: RunService, args: dict[str, Any], ctx: To
     }
 
 
+async def _write_custom_tests(service: RunService, args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    from app.agent_tests import write_custom_tests
+
+    ref = args.get("apk_or_run") or args.get("run_id") or ctx.active_run_id
+    source = await _resolve_run(service, ref, ctx) if ref else None
+    if ref and source is None:
+        return _not_found(ref)
+    if source is None:
+        runs = await service.list_runs()
+        source = next((r for r in runs if r.status != "failed" and r.app), None)
+        if source is None:
+            return {"error": "no analysed app yet; ask the user to upload an APK in the web UI"}
+    if source.app is None:
+        return {"error": "that run has no app details (the APK was not analysed); pick another run"}
+    findings = [f for f in await service.list_findings(source.id) if f.source == "static"]
+    tests, error = await write_custom_tests(source.app, findings, str(args.get("request") or ""))
+    if error:
+        return {"error": error}
+    profiles = list(dict.fromkeys(t.condition for t in tests))
+    run = await service.rerun(source.id, profiles, None, tests)
+    return {
+        "run_id": run.id,
+        "status": run.status,
+        "source_run_id": source.id,
+        "tests": [{"id": t.id, "title": t.title, "condition": t.condition} for t in tests],
+        "note": "started in the background; the results card on the run page shows each test",
+    }
+
+
 _NEW_TOOLS = {
+    "write_custom_tests": _write_custom_tests,
     "plan_tests": _plan_tests,
     "start_planned_test": _start_planned_test,
     "get_report": _get_report,

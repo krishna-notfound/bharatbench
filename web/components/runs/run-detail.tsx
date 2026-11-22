@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Orb, ORB_LABEL, orbStateFromRun } from "@/components/orb/orb";
 import { buttonVariants } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { ErrorState } from "@/components/shell/states";
 import { useFetch } from "@/components/shell/use-fetch";
 import { FindingsSection } from "@/components/findings/findings-section";
 import { LivePhone } from "@/components/live/live-phone";
+import { StopTestButton } from "@/components/runs/stop-test-button";
 import { AgentTestsCard } from "@/components/runs/agent-tests-card";
 import { StepReplay } from "@/components/live/step-replay";
 import { ReportInsights } from "@/components/report/report-insights";
@@ -21,6 +22,8 @@ import { getFindings, getRun, reportUrl, retryRun } from "@/lib/api";
 import { runTitle } from "@/lib/format";
 import { TERMINAL_STATUSES, type Finding, type Run, type RunEvent, type Severity } from "@/lib/types";
 import { useRunEvents } from "@/lib/ws";
+
+const STOPPABLE: Run["status"][] = ["queued", "analyzing", "provisioning", "running"];
 
 async function saveReport(runId: string) {
   try {
@@ -179,6 +182,15 @@ export function RunDetail({ runId }: { runId: string }) {
             >
               <Download /> Download report
             </a>
+            {r.status === "done" && (
+              <Link
+                href={`/chat?run=${encodeURIComponent(runId)}&intent=custom-tests`}
+                className={`${buttonVariants({ variant: "outline" })} h-9 rounded-full px-4`}
+              >
+                <Wand2 /> Write new tests with the agent
+              </Link>
+            )}
+            {STOPPABLE.includes(r.status) && <StopTestButton runId={runId} onStopped={() => void refreshRun()} />}
           </div>
         </div>
 

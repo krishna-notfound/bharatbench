@@ -73,6 +73,10 @@ export const getEvents = (id: string, afterSeq?: number) =>
       afterSeq !== undefined ? `?after_seq=${afterSeq}` : ""
     }`,
   );
+export const cancelRun = (id: string) =>
+  request<Run>(`/api/runs/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+  });
 export const retryRun = (id: string) =>
   request<Run>(`/api/runs/${encodeURIComponent(id)}/retry`, {
     method: "POST",
