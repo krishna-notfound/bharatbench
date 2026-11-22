@@ -31,6 +31,13 @@ class UiNode:
     rid: str
     bounds: tuple[int, int, int, int]
     clickable: bool
+    password: bool = False
+    hint: str = ""
+    enabled: bool = True
+
+    @property
+    def editable(self) -> bool:
+        return self.cls.endswith(("EditText", "AutoCompleteTextView", "MultiAutoCompleteTextView"))
 
     @property
     def center(self) -> tuple[int, int]:
@@ -64,6 +71,9 @@ def parse_ui_nodes(xml_text: str) -> list[UiNode]:
                 rid=el.get("resource-id", ""),
                 bounds=(x1, y1, x2, y2),
                 clickable=el.get("clickable") == "true",
+                password=el.get("password") == "true",
+                hint=el.get("hint", ""),
+                enabled=el.get("enabled", "true") != "false",
             )
         )
     return nodes
