@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.events import EventBus
 from app.harness_client import HarnessClient
 from app.pipeline import HarnessLike
-from app.routes import health, runs, ws_runs
+from app.routes import health, live, runs, ws_runs
 from app.services import RunServiceImpl, set_run_service
 from app.settings import Settings
 from app.storage.base import Storage
@@ -66,6 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if imports_router is not None:  # before runs so /api/runs/import is never shadowed by /{run_id}
         app.include_router(imports_router)
     app.include_router(runs.router)
+    app.include_router(live.router)
     app.include_router(ws_runs.router)
     try:
         from app.routes.insights import router as insights_router

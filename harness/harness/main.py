@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import ValidationError
 
 from .adb import Adb, Runner, subprocess_runner
@@ -83,6 +83,22 @@ def create_app(settings: Settings | None = None, runner: Runner = subprocess_run
         if job.status in ("queued", "running") or result is None:
             raise HTTPException(status_code=409, detail=f"job is {job.status}")
         return result
+
+    @app.get("/jobs/{job_id}/live")
+    async def live(job_id: str) -> dict[str, object]:
+        get_job(job_id)
+        state = jobs.live.get(job_id)
+        if state is None:
+            return {"seq": 0, "running": False, "has_frame": False, "tap": None, "screen": None}
+        return state.public()
+
+    @app.get("/jobs/{job_id}/live.png")
+    async def live_png(job_id: str) -> Response:
+        get_job(job_id)
+        state = jobs.live.get(job_id)
+        if state is None or state.frame is None:
+            raise HTTPException(status_code=404, detail="no frame yet")
+        return Response(state.frame, media_type="image/png", headers={"Cache-Control": "no-store"})
 
     @app.get("/jobs/{job_id}/artifacts/{path:path}")
     async def artifact(job_id: str, path: str) -> FileResponse:

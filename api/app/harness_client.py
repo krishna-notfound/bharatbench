@@ -52,6 +52,18 @@ class HarnessClient:
                 async for chunk in resp.aiter_bytes():
                     await out.write(chunk)
 
+    async def live(self, job_id: str) -> dict[str, Any]:
+        resp = await self._client.get(f"/jobs/{job_id}/live", timeout=httpx.Timeout(5.0, connect=3.0))
+        resp.raise_for_status()
+        return resp.json()
+
+    async def live_png(self, job_id: str) -> bytes | None:
+        resp = await self._client.get(f"/jobs/{job_id}/live.png", timeout=httpx.Timeout(8.0, connect=3.0))
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.content
+
     async def delete(self, job_id: str) -> None:
         """Remove a finished job's artifacts from the harness disk (404 = already gone)."""
         resp = await self._client.delete(f"/jobs/{job_id}")

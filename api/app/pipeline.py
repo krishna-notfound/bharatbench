@@ -18,6 +18,7 @@ import httpx
 from app.analyzer.dedupe import dedupe_findings
 from app.analyzer.explain import explain_findings
 from app.events import EventBus
+from app.live import write_steps
 from app.models import (
     AppInfo,
     Finding,
@@ -149,7 +150,12 @@ async def _download_artifacts(
             for s in p.screens
         ]
         profiles.append(p.model_copy(update={"screens": screens, "logcat": remap(p.profile_id, p.logcat)}))
-    return result.model_copy(update={"profiles": profiles})
+    out = result.model_copy(update={"profiles": profiles})
+    try:
+        write_steps(out, art_dir)
+    except (OSError, ValueError) as exc:
+        log.warning("Could not write step replay for run %s: %s", run_id, exc)
+    return out
 
 
 def _kind(rel: str) -> str:
