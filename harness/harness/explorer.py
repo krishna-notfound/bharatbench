@@ -186,13 +186,19 @@ class Explorer:
         self.st = State()
         self.pkg = crawler.package
         self.llm_ms: list[int] = []
+        self.last_bad: str | None = None
 
     # ---- device helpers ----
     async def focus(self) -> tuple[str | None, str | None]:
         """(package, component) of the focused window; (None, None) while unknown (a transition)."""
         rc, out, _ = await self.c.adb.shell("dumpsys window | grep mCurrentFocus", timeout=15)
-        m = _FOCUS.search(out) if rc == 0 else None
-        return (m.group(1), m.group(2)) if m else (None, None)
+        found = _FOCUS.findall(out) if rc == 0 else []
+        # Several displays/windows can each report a focus (a stale window of another app on a secondary
+        # display was seen on the test phone). The app owning ANY of them is in the foreground.
+        for pkg, comp in found:
+            if pkg == self.pkg:
+                return pkg, comp
+        return found[-1] if found else (None, None)
 
     def _in_app(self, pkg: str | None) -> bool:
         return pkg is None or pkg == self.pkg or any(a in pkg for a in ALLOWED_FOREIGN)
@@ -200,6 +206,14 @@ class Explorer:
     async def guard(self, xml: str, what: str) -> str:
         """Stay-in-app check after an action. Returns the (possibly refreshed) UI dump."""
         pkg, comp = await self.focus()
+        if not self._in_app(pkg):  # confirm with the resumed activity: mCurrentFocus can be stale during transitions
+            resumed = await self.c.foreground()
+            if resumed and resumed.startswith(f"{self.pkg}/"):
+                return xml
+            if resumed and "/" in resumed:
+                pkg = resumed.split("/", 1)[0]
+                if self._in_app(pkg):
+                    return xml
         if self._in_app(pkg):
             if pkg == self.pkg and comp:
                 self.st.last_comp = comp
@@ -333,6 +347,7 @@ class Explorer:
                 content = await self.ask_llm(self.user_message(k, sig, listing, tried_here))
                 self.llm_ms.append(int((c._clock() - tl) * 1000))
                 act = parse_reply(content, len(nodes)) if content is not None else None
+                self.last_bad = None if act else " ".join((content or "no response")[:80].split())
             what = await self.execute(act, k, sig, info, all_nodes, nodes)
             if what == "done":
                 break
@@ -360,7 +375,7 @@ class Explorer:
         c, st, sec = self.c, self.st, self.sec
         log_here = st.tried_log[sig]
         kind = act["action"] if act else "fallback"
-        reason = sec.mask(act["reason"]) if act else "model gave no usable answer; picking an untried control"
+        reason = sec.mask(act["reason"]) if act else f"no usable model answer ({self.last_bad}); picking an untried control"
         node = nodes[act["node"]] if act and act["node"] is not None else None
 
         if kind == "tap" and node is not None:
@@ -378,9 +393,20 @@ class Explorer:
                 reason = "model repeated a tried control; picking an untried one"
             else:
                 st.dup_streak = 0
-        elif kind != "fallback":
+        elif kind not in ("fallback", "fill"):
             st.dup_streak = 0
 
+        if kind == "fill" and node is not None:
+            wanted = sec.expand(str(act["text"]))[:80] if act else ""
+            if node.text and node.text == wanted:  # already holds this value: retyping wastes the step
+                st.dup_streak += 1
+                st.notes.append(f"Field '{sec.tokenize(node.label)[:30]}' is already filled. Do NOT refill it: tap the next/submit control.")
+                if st.dup_streak < 2:
+                    return f"skip refill {node.label}"
+                kind = "fallback"
+                reason = "field already filled; picking an untried control"
+            else:
+                st.dup_streak = 0
         if kind == "done":
             self.caption(f"Agent: finished - {reason}")
             c._step("wait", True, "done", c._clock(), reason)

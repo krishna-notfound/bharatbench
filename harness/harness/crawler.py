@@ -271,8 +271,8 @@ class Crawler:
             try:
                 await self.explorer(self, steps)
                 return self.j
-            except Exception:  # noqa: BLE001 - a broken brain degrades to the heuristic journey
-                self._step("wait", False, "explorer", None, "explorer failed; using the basic journey")
+            except Exception as exc:  # noqa: BLE001 - a broken brain degrades to the heuristic journey
+                self._step("wait", False, "explorer", None, f"explorer failed ({type(exc).__name__}: {str(exc)[:60]}); using the basic journey")
         tapped: set[str] = set()
         for i in range(1, steps + 1):
             if self.cancelled():

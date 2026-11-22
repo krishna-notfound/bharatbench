@@ -198,3 +198,14 @@ async def test_crawler_run_uses_explorer_and_survives_its_failure(tmp_path):
     c.explorer = brain
     j = await c.run(2)
     assert seen == [2] and any(s.target == "explorer" for s in j.steps) and any(s.action == "tap" for s in j.steps)
+
+
+async def test_refilling_a_filled_field_is_skipped(tmp_path):
+    xml = make_xml(["Register"], ["Next"], fields=[{"rid": "x:id/name", "hint": "Name", "text": "Asha Verma"}])
+    dev = FakeDevice([xml])
+    fill = {"action": "fill", "node": 2, "text": "Asha Verma", "reason": "name"}
+    llm = Scripted([fill, fill, fill])
+    await run(dev, tmp_path, llm, steps=3)
+    assert not dev.typed  # never retyped
+    assert "already filled" in llm.user(1)
+    assert ["250", "185"] in taps(dev)  # the second repeat falls back to the untried "Next"
