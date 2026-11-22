@@ -114,6 +114,11 @@ class FakeDevice:
             return 0, b"", b""
         if "ResumedActivity" in s:
             return 0, f"  mResumedActivity: ActivityRecord{{ab u0 {self.foreground} t1}}\n".encode(), b""
+        if "mCurrentFocus" in s:
+            return 0, f"  mCurrentFocus=Window{{ab u0 {self.foreground}}}\n".encode(), b""
+        if "am start -n" in s:
+            self.foreground = f"{PKG}/{self.launcher}"
+            return 0, b"", b""
         if "resolve-activity" in s:
             return 0, f"priority=0\n  {PKG}/{self.launcher}\n".encode(), b""
         if "am start -W" in s:

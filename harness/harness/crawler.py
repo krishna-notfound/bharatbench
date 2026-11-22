@@ -69,6 +69,7 @@ class Crawler:
         clock: Callable[[], float] = time.monotonic,
         on_step: Callable[[HarnessStep], None] | None = None,
         secrets: Secrets | None = None,
+        explorer: Callable[["Crawler", int], Awaitable[None]] | None = None,
     ) -> None:
         self.adb = adb
         self.package = package
@@ -80,6 +81,7 @@ class Crawler:
         self._clock = clock
         self._on_step = on_step
         self.secrets = secrets
+        self.explorer = explorer  # f25: LLM brain for the default journey (None = heuristic loop)
         self.j = Journey()
         self._launcher: str | None = None
         self._cap_hash: str | None = None  # UI hash of the last captured screen
@@ -265,6 +267,12 @@ class Crawler:
         xml = await self._settle()
         await self._capture(xml, "after launch")
         xml = await self._watch_stuck(xml)
+        if self.explorer is not None:
+            try:
+                await self.explorer(self, steps)
+                return self.j
+            except Exception:  # noqa: BLE001 - a broken brain degrades to the heuristic journey
+                self._step("wait", False, "explorer", None, "explorer failed; using the basic journey")
         tapped: set[str] = set()
         for i in range(1, steps + 1):
             if self.cancelled():

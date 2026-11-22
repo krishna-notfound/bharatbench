@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     llm_model: str = "sarvam-105b"
     llm_api_key: str | None = None  # unset: agent tests are skipped with a note
     agent_test_timeout_s: int = 150
+    explorer_enabled: bool = True  # f25: LLM-driven default journey when an LLM key is set
 
 
 def load_settings() -> Settings:
