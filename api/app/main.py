@@ -62,6 +62,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(runs.router)
     app.include_router(ws_runs.router)
     try:
+        from app.routes.insights import router as insights_router
+    except ImportError:  # f20 insights not present
+        insights_router = None
+    if insights_router is not None:
+        app.include_router(insights_router)
+    try:
         from app.voice.router import router as voice_router
     except ImportError:  # f05 not merged yet
         voice_router = None
