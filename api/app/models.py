@@ -80,6 +80,8 @@ class AppInfo(BaseModel):
     main_activity: str | None = None
     native_abis: list[str] = []
     dex_count: int = 0
+    activities: list[str] = []  # f23: activity class names (for agent test writing)
+    ui_strings: list[str] = []  # f23: sample of human-readable strings found in the APK
 
 
 class RunSummary(BaseModel):
@@ -116,12 +118,23 @@ class RunEvent(BaseModel):
 HarnessJobStatus = Literal["queued", "running", "done", "failed", "cancelled"]
 
 
+class AgentTest(BaseModel):
+    """An app-specific test written by the LLM agent (f23). `condition` must be a supported profile."""
+
+    id: str
+    title: str
+    goal: str
+    condition: ProfileId = "baseline"
+    success_check: str
+
+
 class HarnessJobRequest(BaseModel):
     run_id: str
     package_name: str
     main_activity: str | None = None
     profiles: list[ProfileId]
     journey_steps: int = 8
+    agent_tests: list[AgentTest] = []  # f23, optional
 
 
 class HarnessCrash(BaseModel):
@@ -166,6 +179,16 @@ class HarnessProfileResult(BaseModel):
     logcat: str | None = None  # artifact path
 
 
+class HarnessAgentTestResult(BaseModel):
+    id: str
+    title: str
+    condition: ProfileId = "baseline"
+    passed: bool | None = None  # None = could not be judged (skipped, device problem, no verdict)
+    reason: str = ""
+    steps: list[HarnessStep] = []
+    screens: list[HarnessScreen] = []
+
+
 class HarnessSecurityEvidence(BaseModel):
     kind: Literal["logcat", "screenshot", "ui_dump", "manifest", "code", "metric", "note"]
     ref: str | None = None  # artifact path relative to the job dir
@@ -198,6 +221,7 @@ class HarnessResult(BaseModel):
     android_version: str | None = None
     profiles: list[HarnessProfileResult]
     security: list[HarnessSecurityCheck] = []
+    agent_tests: list[HarnessAgentTestResult] = []  # f23, optional
 
 
 # ---------- Service interface the voice agent (and routes) depend on ----------
