@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SeverityBadge } from "@/components/findings/severity-badge";
 import { findingSourceLabel, findingTitle } from "@/components/findings/finding-text";
+import { FixWithAiBlock } from "@/components/fix/fix-with-ai";
 import { artifactUrl } from "@/lib/api";
 import { titleCase } from "@/lib/format";
 import type { Evidence, Finding } from "@/lib/types";
@@ -85,6 +86,8 @@ function Details({ runId, f }: { runId: string; f: Finding }) {
       )}
 
       <p className="text-sm leading-relaxed">{f.description}</p>
+
+      <FixWithAiBlock key={f.id} runId={runId} findingId={f.id} />
 
       {f.repro_steps.length > 0 && (
         <Block title="How to reproduce">

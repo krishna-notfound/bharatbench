@@ -68,6 +68,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(runs.router)
     app.include_router(live.router)
     app.include_router(ws_runs.router)
+    from app.routes.fix_prompts import router as fix_prompts_router
+
+    app.include_router(fix_prompts_router)
     try:
         from app.routes.insights import router as insights_router
     except ImportError:  # f20 insights not present

@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/shell/states";
 import { useFetch } from "@/components/shell/use-fetch";
 import { FindingsSection } from "@/components/findings/findings-section";
+import { FixEverythingCard } from "@/components/fix/fix-with-ai";
 import { LivePhone } from "@/components/live/live-phone";
 import { StopTestButton } from "@/components/runs/stop-test-button";
 import { AgentTestsCard } from "@/components/runs/agent-tests-card";
@@ -217,6 +218,8 @@ export function RunDetail({ runId }: { runId: string }) {
       )}
 
       {r.status === "done" && findings.data && <ReportInsights run={r} findings={findings.data} />}
+
+      {r.status === "done" && findings.data && <FixEverythingCard runId={runId} count={findings.data.length} />}
 
       <FindingsSection
         runId={runId}

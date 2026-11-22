@@ -54,6 +54,12 @@ export const getProfiles = () => request<Profile[]>("/api/profiles");
 export const listRuns = () => request<Run[]>("/api/runs");
 export const getRun = (id: string) =>
   request<Run>(`/api/runs/${encodeURIComponent(id)}`);
+export const getFixPrompt = (runId: string) =>
+  request<{ prompt: string; findings: number }>(`/api/runs/${encodeURIComponent(runId)}/fix-prompt`);
+export const getFindingFixPrompt = (runId: string, findingId: string) =>
+  request<{ prompt: string }>(
+    `/api/runs/${encodeURIComponent(runId)}/findings/${encodeURIComponent(findingId)}/fix-prompt`,
+  );
 export const getFindings = (id: string) =>
   request<Finding[]>(`/api/runs/${encodeURIComponent(id)}/findings`);
 export interface AgentTestRow {
